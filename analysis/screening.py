@@ -13,6 +13,14 @@ from core.agent.prompts import PromptBuilder
 class StockScreener:
     """股票筛选器，基于AI分析的股票推荐系统"""
 
+    # 类常量
+    DEFAULT_LIMIT = 10
+    NO_STOCK_KEYWORDS = ["没有找到", "无符合条件", "抱歉"]
+    STOCK_PATTERN = r'(\d{6})\s+([^\d\n]+)\s+-\s+PE:\s*([\d.]+)\s+-\s+ROE:\s*([\d.]+)%'
+    REASONING_PATTERN_TEMPLATE = r'{symbol}\s+{name}.*?(?=下一个|\n\n|\Z)'
+    CODE_PATTERN = r'(\d{6})\s+[^\d\n]+'
+    REASONING_PREFIX = "理由："
+
     def __init__(self, agent: GLMAgent):
         """
         初始化股票筛选器
@@ -22,6 +30,57 @@ class StockScreener:
         """
         self.agent = agent
         self.prompt_builder = PromptBuilder()
+
+    def _validate_criteria(self, criteria: Dict[str, Dict[str, float]], top_n: int) -> None:
+        """
+        验证筛选条件的参数有效性
+
+        Args:
+            criteria: 筛选条件字典
+            top_n: 返回的股票数量
+
+        Raises:
+            ValueError: 当参数无效时抛出异常
+        """
+        if not isinstance(criteria, dict):
+            raise ValueError("筛选条件必须是字典类型")
+
+        if not isinstance(top_n, int) or top_n <= 0:
+            raise ValueError("top_n必须是正整数")
+
+        if top_n > 100:
+            raise ValueError("top_n不能超过100")
+
+        allowed_keys = {"pe", "roe", "pb", "ps", "dividend_yield"}
+        allowed_ops = {"min", "max", "eq"}
+
+        for key, ops in criteria.items():
+            if key not in allowed_keys:
+                raise ValueError(f"无效的筛选条件键: {key}")
+
+            if not isinstance(ops, dict):
+                raise ValueError(f"条件值必须是字典类型: {key}")
+
+            for op, value in ops.items():
+                if op not in allowed_ops:
+                    raise ValueError(f"无效的操作符: {op}")
+
+                if not isinstance(value, (int, float)):
+                    raise ValueError(f"条件值必须是数字类型: {op}: {value}")
+
+    def screen_stocks(self, criteria: Dict[str, Dict[str, float]], top_n: int = 10) -> Dict[str, Any]:
+        """
+        执行股票筛选
+
+        Args:
+            criteria: 筛选条件字典，如 {"pe": {"max": 30}, "roe": {"min": 15}}
+            top_n: 返回的股票数量
+
+        Returns:
+            包含筛选结果和推理的字典
+        """
+        # 验证输入参数
+        self._validate_criteria(criteria, top_n)
 
     def screen_stocks(self, criteria: Dict[str, Dict[str, float]], top_n: int = 10) -> Dict[str, Any]:
         """
@@ -75,12 +134,16 @@ class StockScreener:
         stocks = []
 
         # 如果响应明确表示没有找到股票，返回空列表
-        if "没有找到" in response or "无符合条件" in response or not response.strip():
+        if not response.strip():
             return stocks
 
+        # 检查是否有无股票的关键词
+        for keyword in self.NO_STOCK_KEYWORDS:
+            if keyword in response:
+                return stocks
+
         # 使用正则表达式提取股票信息
-        stock_pattern = r'(\d{6})\s+([^\d\n]+)\s+-\s+PE:\s*([\d.]+)\s+-\s+ROE:\s*([\d.]+)%'
-        matches = re.findall(stock_pattern, response)
+        matches = re.findall(self.STOCK_PATTERN, response)
 
         if matches:
             for match in matches:
@@ -90,15 +153,15 @@ class StockScreener:
                 roe = float(match[3])
 
                 # 提取理由（如果有）
-                reasoning_pattern = rf'{symbol}\s+{name}.*?(?=下一个|\n\n|\Z)'
+                reasoning_pattern = self.REASONING_PATTERN_TEMPLATE.format(symbol=symbol, name=name)
                 reasoning_match = re.search(reasoning_pattern, response, re.DOTALL)
                 reasoning = ""
                 if reasoning_match:
                     reasoning_text = reasoning_match.group(0)
                     # 提取理由部分
-                    reason_start = reasoning_text.find("理由：")
+                    reason_start = reasoning_text.find(self.REASONING_PREFIX)
                     if reason_start != -1:
-                        reasoning = reasoning_text[reason_start + 3:].strip()
+                        reasoning = reasoning_text[reason_start + len(self.REASONING_PREFIX):].strip()
 
                 stocks.append({
                     "symbol": symbol,
@@ -111,12 +174,10 @@ class StockScreener:
         # 如果没有找到明确的股票信息，尝试其他解析方式
         if not stocks:
             # 尝试提取可能的股票代码
-            code_pattern = r'(\d{6})\s+[^\d\n]+'
-            codes = re.findall(code_pattern, response)
+            codes = re.findall(self.CODE_PATTERN, response)
             if codes:
                 # 简单的回退方案，创建基本的股票信息
-                default_limit = 10  # 默认限制
-                for code in codes[:default_limit]:
+                for code in codes[:self.DEFAULT_LIMIT]:
                     stocks.append({
                         "symbol": code,
                         "name": "待确认",
