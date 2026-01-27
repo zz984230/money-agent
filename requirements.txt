@@ -1,6 +1,6 @@
 # 核心框架
-python-dotenv==1.0.0
-pydantic==2.5.0
+python-dotenv==1.0.1
+pydantic==2.8.0
 pydantic-settings==2.1.0
 
 # AI 模型
@@ -14,8 +14,8 @@ mcp==0.9.0
 
 # 数据源
 akshare==1.12.0
-pandas==2.1.0
-numpy==1.24.0
+pandas==2.2.0
+numpy==1.26.0
 
 # Web 框架
 fastapi==0.109.0
