@@ -47,12 +47,15 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+logs/*
+!logs/.gitkeep
 
 # Data
 *.csv
 *.xlsx
-data/
+data/*
+!data/__init__.py
+!data/fetchers/__init__.py
 *.json
 *.pkl
 
