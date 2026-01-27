@@ -143,13 +143,7 @@ def test_stock_screening_empty_response(screener):
 
 def test_stock_screening_invalid_criteria(screener):
     """测试无效的筛选条件"""
-    # 测试空条件
-    result = screener.screen_stocks({}, top_n=5)
-    assert result is not None
-    assert "reasoning" in result
-
-    # 测试无效格式
+    # 测试无效格式 - 应该抛出ValueError
     criteria = {"invalid_key": {"invalid_op": 10}}
-    result = screener.screen_stocks(criteria, top_n=5)
-    assert result is not None
-    assert "reasoning" in result
+    with pytest.raises(ValueError, match="无效的筛选条件键"):
+        screener.screen_stocks(criteria, top_n=5)

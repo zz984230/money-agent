@@ -82,17 +82,6 @@ class StockScreener:
         # 验证输入参数
         self._validate_criteria(criteria, top_n)
 
-    def screen_stocks(self, criteria: Dict[str, Dict[str, float]], top_n: int = 10) -> Dict[str, Any]:
-        """
-        执行股票筛选
-
-        Args:
-            criteria: 筛选条件字典，如 {"pe": {"max": 30}, "roe": {"min": 15}}
-            top_n: 返回的股票数量
-
-        Returns:
-            包含筛选结果和推理的字典
-        """
         # 构建提示词
         prompt = self.prompt_builder.build_stock_screening_prompt(criteria, top_n)
 
