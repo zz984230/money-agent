@@ -1,8 +1,13 @@
 import os
+import logging
 from typing import Optional, Dict, Any, Generator
 from zhipuai import ZhipuAI
 from .base_agent import BaseAgent
 from config.settings import settings
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class GLMAgent(BaseAgent):
@@ -42,7 +47,7 @@ class GLMAgent(BaseAgent):
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"GLM API 调用失败: {e}")
+            logger.error(f"GLM API 调用失败: {e}")
             return None
 
     def stream_chat(self, prompt: str, **kwargs) -> Generator[str, None, None]:
@@ -62,5 +67,5 @@ class GLMAgent(BaseAgent):
                     yield chunk.choices[0].delta.content
 
         except Exception as e:
-            print(f"GLM 流式 API 调用失败: {e}")
+            logger.error(f"GLM 流式 API 调用失败: {e}")
             yield f"Error: {e}"
