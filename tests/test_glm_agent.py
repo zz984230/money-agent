@@ -49,3 +49,52 @@ def test_glm_agent_stock_analysis(mock_zhipu):
         assert isinstance(response, str)
         # 检查是否包含关键词
         assert any(keyword in response for keyword in ['茅台', '贵州茅台', '白酒', '行业'])
+
+@patch('core.agent.glm_agent.ZhipuAI')
+def test_glm_agent_stream_chat(mock_zhipu):
+    """测试流式对话功能"""
+    # 模拟流式 API 响应
+    mock_response_chunks = [
+        MagicMock(choices=[MagicMock(delta=MagicMock(content="Hello"))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content=", I"))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content=" am"))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content=" a"))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content=" GLM"))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content=" AI"))]),
+        MagicMock(choices=[MagicMock(delta=MagicMock(content=" assistant"))]),
+    ]
+
+    # 将 chunks 转换为迭代器
+    mock_response_iter = iter(mock_response_chunks)
+    mock_zhipu.return_value.chat.completions.create.return_value = mock_response_iter
+
+    # 设置模拟的 API key
+    with patch.object(settings, 'glm_api_key', 'test_key'):
+        agent = GLMAgent()
+        prompt = "Hello, please introduce yourself in one sentence"
+
+        # 获取流式响应生成器
+        stream_generator = agent.stream_chat(prompt)
+
+        # 验证返回的是生成器
+        assert hasattr(stream_generator, '__iter__') or hasattr(stream_generator, '__next__')
+
+        # 收集所有流式响应
+        full_response = ""
+        for chunk in stream_generator:
+            assert isinstance(chunk, str)
+            full_response += chunk
+
+        # 验证完整响应
+        expected_response = "Hello, I am a GLM AI assistant"
+        assert full_response == expected_response
+        assert "GLM" in full_response
+
+        # 验证 API 调用参数
+        mock_zhipu.return_value.chat.completions.create.assert_called_once_with(
+            model=settings.glm_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=2000,
+            stream=True
+        )
