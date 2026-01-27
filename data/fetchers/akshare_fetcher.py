@@ -6,9 +6,39 @@ from typing import List, Dict, Optional
 class AKShareFetcher:
     """AKShare数据获取类"""
 
+    # 列映射字典
+    COLUMN_MAPPING = {
+        '日期': 'date',
+        '开盘': 'open',
+        '收盘': 'close',
+        '最高': 'high',
+        '最低': 'low',
+        '成交量': 'volume',
+        '成交额': 'amount'
+    }
+
     def __init__(self):
         """初始化AKShare数据获取器"""
         pass
+
+    def _process_daily_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """处理日线数据：列名转换和日期处理
+
+        Args:
+            df: 原始数据DataFrame
+
+        Returns:
+            DataFrame: 处理后的DataFrame
+        """
+        # 重命名列为英文
+        existing_columns = {k: v for k, v in self.COLUMN_MAPPING.items() if k in df.columns}
+        df = df.rename(columns=existing_columns)
+
+        # 转换日期列为datetime类型
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+
+        return df
 
     def get_stock_list(self) -> List[Dict]:
         """获取 A 股列表"""
@@ -29,26 +59,7 @@ class AKShareFetcher:
             DataFrame: 包含日线数据的DataFrame
         """
         df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="")
-        # 重命名列为英文
-        column_mapping = {
-            '日期': 'date',
-            '开盘': 'open',
-            '收盘': 'close',
-            '最高': 'high',
-            '最低': 'low',
-            '成交量': 'volume',
-            '成交额': 'amount'
-        }
-
-        # 只重命名存在的列
-        existing_columns = {k: v for k, v in column_mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_columns)
-
-        # 转换日期列为datetime类型
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-
-        return df
+        return self._process_daily_data(df)
 
     def get_etf_list(self) -> List[Dict]:
         """获取 ETF 列表"""
@@ -67,26 +78,7 @@ class AKShareFetcher:
             DataFrame: 包含ETF日线数据的DataFrame
         """
         df = ak.fund_etf_hist_sina(symbol=symbol, period="daily", start_date=start_date, end_date=end_date)
-        # 重命名列为英文
-        column_mapping = {
-            '日期': 'date',
-            '开盘': 'open',
-            '收盘': 'close',
-            '最高': 'high',
-            '最低': 'low',
-            '成交量': 'volume',
-            '成交额': 'amount'
-        }
-
-        # 只重命名存在的列
-        existing_columns = {k: v for k, v in column_mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_columns)
-
-        # 转换日期列为datetime类型
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-
-        return df
+        return self._process_daily_data(df)
 
     def get_convertible_list(self) -> List[Dict]:
         """获取可转债列表"""
@@ -104,27 +96,12 @@ class AKShareFetcher:
         Returns:
             DataFrame: 包含可转债日线数据的DataFrame
         """
-        df = ak.bond_cb_hist(symbol=symbol, start_date=start_date, end_date=end_date)
-        # 重命名列为英文
-        column_mapping = {
-            '日期': 'date',
-            '开盘': 'open',
-            '收盘': 'close',
-            '最高': 'high',
-            '最低': 'low',
-            '成交量': 'volume',
-            '成交额': 'amount'
-        }
-
-        # 只重命名存在的列
-        existing_columns = {k: v for k, v in column_mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_columns)
-
-        # 转换日期列为datetime类型
+        # akshare的可转债函数不支持start_date和end_date参数
+        df = ak.bond_zh_hs_cov_daily(symbol=symbol)
+        # 筛选日期范围
         if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-
-        return df
+            df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
+        return self._process_daily_data(df)
 
     def get_stock_info(self, symbol: str) -> Dict:
         """获取股票基本信息

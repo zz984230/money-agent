@@ -51,6 +51,29 @@ def test_get_stock_daily(mock_stock_zh_a_hist):
     assert df['date'].dtype == 'datetime64[ns]'
     mock_stock_zh_a_hist.assert_called_once_with(symbol="000001", period="daily", start_date="2024-01-01", end_date="2024-01-31", adjust="")
 
+@patch('akshare.fund_etf_hist_sina')
+def test_get_etf_daily(mock_fund_etf_hist_sina):
+    """测试获取ETF日线数据"""
+    # Mock返回数据
+    mock_data = pd.DataFrame({
+        '日期': ['2024-01-01', '2024-01-02', '2024-01-03'],
+        '开盘': [5.0, 5.1, 5.2],
+        '收盘': [5.1, 5.2, 5.3],
+        '最高': [5.2, 5.3, 5.4],
+        '最低': [4.9, 5.0, 5.1],
+        '成交量': [500000, 600000, 700000],
+        '成交额': [2550000, 3120000, 3710000]
+    })
+    mock_fund_etf_hist_sina.return_value = mock_data
+
+    fetcher = AKShareFetcher()
+    df = fetcher.get_etf_daily("510300", "2024-01-01", "2024-01-31")
+    assert df is not None
+    assert len(df) > 0
+    assert 'close' in df.columns
+    assert df['date'].dtype == 'datetime64[ns]'
+    mock_fund_etf_hist_sina.assert_called_once_with(symbol="510300", period="daily", start_date="2024-01-01", end_date="2024-01-31")
+
 def test_get_etf_list():
     """测试获取 ETF 列表"""
     fetcher = AKShareFetcher()
@@ -75,3 +98,26 @@ def test_get_convertible_list(mock_bond_cb_jsl):
     assert isinstance(cb_list, list)
     assert len(cb_list) > 0
     mock_bond_cb_jsl.assert_called_once()
+
+@patch('akshare.bond_zh_hs_cov_daily')
+def test_get_convertible_daily(mock_bond_cb_hist):
+    """测试获取可转债日线数据"""
+    # Mock返回数据
+    mock_data = pd.DataFrame({
+        '日期': ['2024-01-01', '2024-01-02', '2024-01-03'],
+        '开盘': [100.0, 100.5, 101.0],
+        '收盘': [100.5, 101.0, 101.5],
+        '最高': [100.8, 101.2, 101.8],
+        '最低': [99.9, 100.4, 100.9],
+        '成交量': [10000, 12000, 15000],
+        '成交额': [1005000, 1212000, 1522500]
+    })
+    mock_bond_cb_hist.return_value = mock_data
+
+    fetcher = AKShareFetcher()
+    df = fetcher.get_convertible_daily("113527", "2024-01-01", "2024-01-31")
+    assert df is not None
+    assert len(df) > 0
+    assert 'close' in df.columns
+    assert df['date'].dtype == 'datetime64[ns]'
+    mock_bond_cb_hist.assert_called_once_with(symbol="113527")
