@@ -6,14 +6,14 @@ pydantic-settings==2.1.0
 # AI 模型
 langchain==0.1.0
 langchain-openai==0.0.2
-zhipuai==2.1.5  # GLM-4.7
+zhipuai==2.1.5.20250726  # GLM-4.7
 
 # MCP 工具链
 fastmcp==0.1.0
-mcp==0.9.0
+mcp==1.9.3
 
 # 数据源
-akshare==1.12.0
+akshare==1.18.20
 pandas==2.2.0
 numpy==1.26.0
 
