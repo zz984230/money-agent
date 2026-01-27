@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from pathlib import Path
 
@@ -21,10 +21,10 @@ class Settings(BaseSettings):
     # 数据库配置
     db_path: Path = Field(default=Path("./data/money_agent.db"))
 
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8"
-    }
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8"
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
