@@ -212,57 +212,116 @@ class ConvertibleBondAnalyzer:
 
             # 直接调用 AKShare 获取可转债列表
             import akshare as ak
-            df = ak.bond_cb_jsl()
 
-            if df is None or df.empty:
-                logger.warning("未获取到可转债列表数据")
-                return None
+            # 优先使用 bond_zh_hs_cov_spot，包含更多可转债（约394只）
+            try:
+                df = ak.bond_zh_hs_cov_spot()
+                logger.debug(f"使用 bond_zh_hs_cov_spot 获取到 {len(df)} 只可转债")
 
-            logger.debug(f"成功获取可转债列表，共 {len(df)} 只")
+                if df is None or df.empty:
+                    raise Exception("bond_zh_hs_cov_spot 返回空数据")
 
-            # 转换为统一格式，包含更多字段
-            cb_list = []
-            for _, row in df.iterrows():
-                # 使用位置索引来访问列
-                # 列顺序: 0:代码, 1:名称, 2:现价, 3:涨跌幅, 4:正股代码, 5:正股名称, 6:正股涨跌, 7:转股溢价率, 8:PB, 9:转股价, 10:转股价值, 11:转股溢价率2, 12:评级, 13:回售价, 14:强赎价, 15:规模, 16:到期日, 17:剩余年限, 18:剩余规模, 22:双低
-                cb_data = {
-                    "cb_code": str(row.iloc[0]) if len(row) > 0 else '',
-                    "cb_name": str(row.iloc[1]) if len(row) > 1 else '',
-                    "price": float(row.iloc[2]) if len(row) > 2 else 0.0,
-                    "change": float(row.iloc[3]) if len(row) > 3 else 0.0,
-                    "stock_code": str(row.iloc[4]) if len(row) > 4 else '',  # 正股代码
-                    "stock_name": str(row.iloc[5]) if len(row) > 5 else '',  # 正股名称
-                }
+                # 从 symbol 中提取交易所信息
+                cb_list = []
+                for _, row in df.iterrows():
+                    code = row.get('code')
+                    name = row.get('name')
+                    symbol = row.get('symbol', '')
 
-                # 添加更多可用字段
-                if len(row) > 7 and row.iloc[7] is not None:
-                    cb_data["premium_rate"] = float(row.iloc[7])  # 转股溢价率
-                if len(row) > 9 and row.iloc[9] is not None:
-                    cb_data["conversion_price"] = float(row.iloc[9])  # 转股价
-                if len(row) > 10 and row.iloc[10] is not None:
-                    cb_data["conversion_value"] = float(row.iloc[10])  # 转股价值
-                if len(row) > 12 and row.iloc[12] is not None:
-                    cb_data["bond_rating"] = str(row.iloc[12])  # 债券评级
-                if len(row) > 13 and row.iloc[13] is not None:
-                    cb_data["put_trigger_price"] = float(row.iloc[13])  # 回售触发价
-                if len(row) > 14 and row.iloc[14] is not None:
-                    cb_data["call_trigger_price"] = float(row.iloc[14])  # 强赎触发价
-                if len(row) > 15 and row.iloc[15] is not None:
-                    cb_data["balance"] = float(row.iloc[15])  # 转债规模
-                if len(row) > 16 and row.iloc[16] is not None:
-                    cb_data["maturity_date"] = str(row.iloc[16])  # 到期时间
-                if len(row) > 17 and row.iloc[17] is not None:
-                    cb_data["remaining_years"] = float(row.iloc[17])  # 剩余年限
-                if len(row) > 18 and row.iloc[18] is not None:
-                    cb_data["remaining_balance"] = float(row.iloc[18])  # 剩余规模
-                if len(row) > 22 and row.iloc[22] is not None:
-                    cb_data["double_low"] = float(row.iloc[22])  # 双低
+                    if not code or not name:
+                        continue
 
-                if cb_data["cb_code"] and cb_data["cb_name"]:
+                    # 尝试从可转债代码推断正股代码
+                    # 常见规则:
+                    # - 11xxxx -> 60xxxx (上海主板)
+                    # - 12xxxx -> 00xxxx, 30xxxx (深圳主板/创业板)
+                    # - 118xxx, 123xxx -> 688xxx, 300xxx (科创板/创业板)
+                    stock_code = ""
+                    code_str = str(code)
+                    if len(code_str) == 6:
+                        if code_str.startswith('11'):
+                            # 上海可转债，对应上海主板股票 60xxxx
+                            stock_code = '60' + code_str[2:]
+                        elif code_str.startswith('12'):
+                            # 深圳可转债，需要判断对应主板还是创业板
+                            # 通常 12xxxx 对应 00xxxx 或 30xxxx
+                            # 先尝试 00xxxx
+                            stock_code = '00' + code_str[2:]
+                        elif code_str.startswith('118'):
+                            # 科创板可转债，对应 688xxx
+                            stock_code = '688' + code_str[3:]
+                        elif code_str.startswith('123'):
+                            # 创业板可转债，对应 300xxx
+                            stock_code = '300' + code_str[3:]
+
+                    cb_data = {
+                        "cb_code": str(code),
+                        "cb_name": str(name),
+                        "price": float(row.get('trade', 0)) if pd.notna(row.get('trade')) else 0.0,
+                        "change": float(row.get('changepercent', 0)) if pd.notna(row.get('changepercent')) else 0.0,
+                        "stock_code": stock_code,  # 推断的正股代码
+                        "stock_name": "",
+                    }
+
                     cb_list.append(cb_data)
 
-            logger.info(f"可转债列表格式化完成，共 {len(cb_list)} 只")
-            return cb_list
+                logger.info(f"可转债列表格式化完成，共 {len(cb_list)} 只")
+                return cb_list
+
+            except Exception as e:
+                logger.warning(f"bond_zh_hs_cov_spot 失败: {e}，尝试使用 bond_cb_jsl")
+                # 回退到原来的 bond_cb_jsl
+                df = ak.bond_cb_jsl()
+
+                if df is None or df.empty:
+                    logger.warning("未获取到可转债列表数据")
+                    return None
+
+                logger.debug(f"成功获取可转债列表，共 {len(df)} 只")
+
+                # 转换为统一格式，包含更多字段
+                cb_list = []
+                for _, row in df.iterrows():
+                    # 使用位置索引来访问列
+                    # 列顺序: 0:代码, 1:名称, 2:现价, 3:涨跌幅, 4:正股代码, 5:正股名称, 6:正股涨跌, 7:转股溢价率, 8:PB, 9:转股价, 10:转股价值, 11:转股溢价率2, 12:评级, 13:回售价, 14:强赎价, 15:规模, 16:到期日, 17:剩余年限, 18:剩余规模, 22:双低
+                    cb_data = {
+                        "cb_code": str(row.iloc[0]) if len(row) > 0 else '',
+                        "cb_name": str(row.iloc[1]) if len(row) > 1 else '',
+                        "price": float(row.iloc[2]) if len(row) > 2 else 0.0,
+                        "change": float(row.iloc[3]) if len(row) > 3 else 0.0,
+                        "stock_code": str(row.iloc[4]) if len(row) > 4 else '',  # 正股代码
+                        "stock_name": str(row.iloc[5]) if len(row) > 5 else '',  # 正股名称
+                    }
+
+                    # 添加更多可用字段
+                    if len(row) > 7 and row.iloc[7] is not None:
+                        cb_data["premium_rate"] = float(row.iloc[7])  # 转股溢价率
+                    if len(row) > 9 and row.iloc[9] is not None:
+                        cb_data["conversion_price"] = float(row.iloc[9])  # 转股价
+                    if len(row) > 10 and row.iloc[10] is not None:
+                        cb_data["conversion_value"] = float(row.iloc[10])  # 转股价值
+                    if len(row) > 12 and row.iloc[12] is not None:
+                        cb_data["bond_rating"] = str(row.iloc[12])  # 债券评级
+                    if len(row) > 13 and row.iloc[13] is not None:
+                        cb_data["put_trigger_price"] = float(row.iloc[13])  # 回售触发价
+                    if len(row) > 14 and row.iloc[14] is not None:
+                        cb_data["call_trigger_price"] = float(row.iloc[14])  # 强赎触发价
+                    if len(row) > 15 and row.iloc[15] is not None:
+                        cb_data["balance"] = float(row.iloc[15])  # 转债规模
+                    if len(row) > 16 and row.iloc[16] is not None:
+                        cb_data["maturity_date"] = str(row.iloc[16])  # 到期时间
+                    if len(row) > 17 and row.iloc[17] is not None:
+                        cb_data["remaining_years"] = float(row.iloc[17])  # 剩余年限
+                    if len(row) > 18 and row.iloc[18] is not None:
+                        cb_data["remaining_balance"] = float(row.iloc[18])  # 剩余规模
+                    if len(row) > 22 and row.iloc[22] is not None:
+                        cb_data["double_low"] = float(row.iloc[22])  # 双低
+
+                    if cb_data["cb_code"] and cb_data["cb_name"]:
+                        cb_list.append(cb_data)
+
+                logger.info(f"可转债列表格式化完成，共 {len(cb_list)} 只")
+                return cb_list
 
         except Exception as e:
             logger.error(f"获取可转债列表时发生错误：{e}", exc_info=True)
