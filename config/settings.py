@@ -5,13 +5,27 @@ from pathlib import Path
 class Settings(BaseSettings):
     """应用配置"""
 
-    # GLM API 配置
+    # ModelScope API 配置 (Qwen 模型)
+    modelscope_api_key: str = Field(default="", env="MODELSCOPE_API_KEY")
+    modelscope_api_base: str = Field(
+        default="https://api-inference.modelscope.cn/v1",
+        env="MODELSCOPE_API_BASE"
+    )
+    modelscope_model: str = Field(
+        default="Qwen/Qwen3-235B-A22B-Instruct-2507",
+        env="MODELSCOPE_MODEL"
+    )
+
+    # GLM API 配置 (备用)
     glm_api_key: str = Field(default="", env="GLM_API_KEY")
     glm_api_base: str = Field(
         default="https://open.bigmodel.cn/api/paas/v4",
         env="GLM_API_BASE"
     )
     glm_model: str = "glm-4-plus"
+
+    # Tushare Pro API 配置
+    tushare_token: str = Field(default="", env="TUSHARE_TOKEN")
 
     # 路径配置
     project_root: Path = Field(default=Path(__file__).parent.parent)

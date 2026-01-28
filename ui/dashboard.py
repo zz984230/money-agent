@@ -13,7 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from core.agent.glm_agent import GLMAgent
+from core.agent.modelscope_agent import ModelScopeAgent
 from analysis.screening import StockScreener
 from analysis.market_analysis import MarketAnalyzer
 from analysis.etf_analysis import ETFAnalyzer
@@ -79,15 +79,15 @@ st.markdown("""
 def initialize_agent():
     """初始化 AI Agent（缓存以提高性能）"""
     try:
-        agent = GLMAgent()
+        agent = ModelScopeAgent()
         return agent
     except Exception as e:
         st.error(f"初始化 AI Agent 失败: {str(e)}")
-        st.error("请确保已设置 GLM_API_KEY 环境变量")
+        st.error("请确保已设置 MODELSCOPE_API_KEY 环境变量")
         return None
 
 
-@st.cache_data
+@st.cache_resource
 def get_analyzers(_agent):
     """获取分析器实例（缓存以提高性能）"""
     if _agent is None:
@@ -519,6 +519,7 @@ def render_convertible_analysis_page(cb_analyzer):
     st.markdown("""
     <div class="info-box">
         可转债分析和双低策略筛选，发现套利机会。双低策略：选择价格低、溢价率低的可转债。
+        <br><small>注意：支持任意可转债名称，不在数据列表中的可转债将使用AI知识库进行分析。</small>
     </div>
     """, unsafe_allow_html=True)
 
@@ -526,26 +527,37 @@ def render_convertible_analysis_page(cb_analyzer):
 
     with tab1:
         with st.form("convertible_analysis_form"):
-            col1, col2 = st.columns(2)
-
-            with col1:
-                cb_code = st.text_input("可转债代码", value="113527", max_chars=6, help="6位数字代码")
-
-            with col2:
-                cb_name = st.text_input("可转债名称", value="广电转债", help="可转债名称")
+            cb_name = st.text_input("可转债名称", value="艾为转债", help="可转债名称，支持模糊匹配")
 
             submitted = st.form_submit_button("开始分析", use_container_width=True)
 
         if submitted:
-            if not cb_code or not cb_name:
-                st.error("请输入可转债代码和名称！")
+            if not cb_name:
+                st.error("请输入可转债名称！")
                 return
 
             with st.spinner("AI 正在分析可转债，请稍候..."):
                 try:
-                    result = cb_analyzer.analyze_convertible(cb_code, cb_name)
+                    result = cb_analyzer.analyze_convertible_by_name(cb_name)
 
                     if result:
+                        # 检查是否是 Tushare 错误
+                        if result.get("error"):
+                            st.markdown(f"""
+                            <div class="error-box">
+                                <h4>获取财务数据失败</h4>
+                                <p><strong>错误信息：</strong>{result.get('summary', '')}</p>
+                                <p><strong>解决方案：</strong></p>
+                                <ul>
+                                    <li>确保已在 .env 文件中配置 TUSHARE_TOKEN</li>
+                                    <li>确认 Tushare Pro Token 有效且有积分余额</li>
+                                    <li>检查网络连接是否正常</li>
+                                    <li>访问 <a href="https://tushare.pro" target="_blank">Tushare Pro</a> 获取 Token</li>
+                                </ul>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            return
+
                         st.markdown(f"""
                         <div class="success-box">
                             <h4>分析完成！</h4>
@@ -555,13 +567,13 @@ def render_convertible_analysis_page(cb_analyzer):
                         """, unsafe_allow_html=True)
 
                         # 显示可转债数据
-                        if result["data"]:
+                        if result.get("data"):
                             st.markdown("### 可转债数据")
                             data_df = pd.DataFrame([result["data"]])
                             st.dataframe(data_df, use_container_width=True, hide_index=True)
 
                         # 显示分析摘要
-                        if result["summary"]:
+                        if result.get("summary"):
                             st.markdown("### 分析摘要")
                             st.info(result["summary"])
 
@@ -573,7 +585,13 @@ def render_convertible_analysis_page(cb_analyzer):
                         st.markdown("""
                         <div class="warning-box">
                             <h4>分析失败</h4>
-                            <p>未能获取到该可转债的数据，请检查代码是否正确...</p>
+                            <p>AI分析失败，可能的原因：</p>
+                            <ul>
+                                <li>API请求频率超限（请稍后重试）</li>
+                                <li>网络连接问题</li>
+                                <li>API配置错误</li>
+                            </ul>
+                            <p>请检查配置后重试，或联系管理员。</p>
                         </div>
                         """, unsafe_allow_html=True)
 

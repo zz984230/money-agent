@@ -4,7 +4,7 @@ Convertible Bond Analysis Module Tests
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 from analysis.convertible_analysis import ConvertibleBondAnalyzer
 from core.agent.base_agent import BaseAgent
 import pandas as pd
@@ -26,15 +26,21 @@ def analyzer(mock_agent):
 
 def test_analyze_convertible(analyzer, mock_agent):
     """测试可转债分析功能"""
-    # 模拟可转债历史数据
-    mock_df = pd.DataFrame({
-        'date': ['2024-01-15', '2024-01-16', '2024-01-17'],
-        'open': [100.0, 100.5, 101.0],
-        'close': [100.5, 101.0, 101.5],
-        'high': [100.8, 101.2, 101.8],
-        'low': [99.9, 100.4, 100.9],
-        'volume': [10000, 12000, 15000],
-        'amount': [1005000, 1212000, 1522500]
+    # 模拟可转债列表数据
+    mock_cb_data = pd.DataFrame({
+        0: ['113527'],  # 代码
+        1: ['兴业转债'],  # 名称
+        2: [100.5],  # 现价
+        3: [0.5],  # 涨跌幅
+        4: ['601166'],  # 正股代码
+        5: ['兴业银行'],  # 正股名称
+        7: [5.0],  # 转股溢价率
+        9: [105.0],  # 转股价
+        10: [95.0],  # 转股价值
+        12: ['AAA'],  # 评级
+        15: [500.0],  # 规模
+        16: ['2026-12-31'],  # 到期日
+        18: [100.5]  # 剩余规模
     })
 
     # 模拟AI分析响应
@@ -72,8 +78,8 @@ def test_analyze_convertible(analyzer, mock_agent):
    - 提前赎回风险"""
 
     # 设置mock返回值
-    with patch.object(analyzer.fetcher, 'get_convertible_daily') as mock_get_cb:
-        mock_get_cb.return_value = mock_df
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_cb_data
         mock_agent.chat.return_value = mock_response
 
         # 执行分析
@@ -88,44 +94,42 @@ def test_analyze_convertible(analyzer, mock_agent):
         assert "summary" in result
         assert len(result["summary"]) <= 200
         assert "兴业转债" in result["analysis"]
-        assert mock_get_cb.called
         assert mock_agent.chat.called
 
 
-def test_analyze_convertible_empty_data(analyzer, mock_agent):
-    """测试可转债分析时数据为空的情况"""
+def test_analyze_convertible_empty_list(analyzer, mock_agent):
+    """测试可转债列表为空的情况"""
     # 模拟空数据
     mock_df = pd.DataFrame()
 
-    # 重置mock以清除之前的调用
-    mock_agent.reset_mock()
+    # 设置AI响应
+    mock_agent.chat.return_value = "兴业转债分析报告（无市场数据）..."
 
-    with patch.object(analyzer.fetcher, 'get_convertible_daily') as mock_get_cb:
-        mock_get_cb.return_value = mock_df
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_df
 
-        # 执行分析
+        # 执行分析 - 应该返回结果但没有市场数据
         result = analyzer.analyze_convertible(cb_code="113527", cb_name="兴业转债")
 
-        # 验证返回None
-        assert result is None
-        # 验证agent.chat没有被调用（因为数据为空）
-        assert not mock_agent.chat.called
+        # 验证返回结果（即使列表为空也会调用AI）
+        assert result is not None
+        # AI应该被调用（即使没有市场数据）
+        assert mock_agent.chat.called
 
 
 def test_get_convertible_list(analyzer):
     """测试获取可转债列表功能"""
     # 模拟可转债列表数据
-    mock_cb_list = [
-        {"代码": "113527", "名称": "兴业转债", "现价": 100.5, "涨跌幅": 0.5},
-        {"代码": "113528", "名称": "国君转债", "现价": 101.2, "涨跌幅": 1.2},
-        {"代码": "113529", "名称": "中信转债", "现价": 99.8, "涨跌幅": -0.2},
-        {"代码": "113530", "名称": "招路转债", "现价": 102.3, "涨跌幅": 1.5},
-        {"代码": "113531", "名称": "平银转债", "现价": 100.1, "涨跌幅": 0.1}
-    ]
+    mock_data = pd.DataFrame({
+        0: ['113527', '113528', '113529', '113530', '113531'],
+        1: ['兴业转债', '国君转债', '中信转债', '招路转债', '平银转债'],
+        2: [100.5, 101.2, 99.8, 102.3, 100.1],
+        3: [0.5, 1.2, -0.2, 1.5, 0.1]
+    })
 
     # 设置mock返回值
-    with patch.object(analyzer.fetcher, 'get_convertible_list') as mock_get_list:
-        mock_get_list.return_value = mock_cb_list
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_data
 
         # 执行获取
         result = analyzer.get_convertible_list()
@@ -135,37 +139,36 @@ def test_get_convertible_list(analyzer):
         assert len(result) == 5
         assert result[0]["cb_code"] == "113527"
         assert result[0]["cb_name"] == "兴业转债"
-        assert mock_get_list.called
 
 
 def test_get_convertible_list_empty(analyzer):
     """测试获取可转债列表为空的情况"""
     # 模拟空列表
-    with patch.object(analyzer.fetcher, 'get_convertible_list') as mock_get_list:
-        mock_get_list.return_value = []
+    mock_df = pd.DataFrame()
+
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_df
 
         # 执行获取
         result = analyzer.get_convertible_list()
 
         # 验证返回None
         assert result is None
-        assert mock_get_list.called
 
 
 def test_screen_double_low(analyzer):
     """测试双低策略筛选功能"""
     # 模拟可转债列表数据
-    mock_cb_list = [
-        {"代码": "113527", "名称": "兴业转债", "现价": 105.0, "转股价": 105.0, "正股价": 100.0},
-        {"代码": "113528", "名称": "国君转债", "现价": 108.0, "转股价": 110.0, "正股价": 108.0},
-        {"代码": "113529", "名称": "中信转债", "现价": 102.0, "转股价": 100.0, "正股价": 102.0},
-        {"代码": "113530", "名称": "招路转债", "现价": 109.0, "转股价": 115.0, "正股价": 110.0},
-        {"代码": "113531", "名称": "平银转债", "现价": 95.0, "转股价": 95.0, "正股价": 96.0}
-    ]
+    mock_data = pd.DataFrame({
+        0: ['113527', '113528', '113529', '113530', '113531'],
+        1: ['兴业转债', '国君转债', '中信转债', '招路转债', '平银转债'],
+        2: [105.0, 108.0, 102.0, 109.0, 95.0],  # 现价
+        3: [0.5, 1.2, -0.2, 1.5, 0.1]  # 涨跌幅
+    })
 
     # 设置mock返回值
-    with patch.object(analyzer.fetcher, 'get_convertible_list') as mock_get_list:
-        mock_get_list.return_value = mock_cb_list
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_data
 
         # 执行筛选（价格<=110，溢价率<=30%）
         result = analyzer.screen_double_low(max_price=110.0, max_premium=30.0, top_n=3)
@@ -177,20 +180,21 @@ def test_screen_double_low(analyzer):
         assert "double_low" in result[0]
         assert result[0]["double_low"] <= result[1]["double_low"]
         assert result[1]["double_low"] <= result[2]["double_low"]
-        assert mock_get_list.called
 
 
 def test_screen_double_low_no_matches(analyzer):
     """测试双低策略筛选时没有匹配项的情况"""
     # 模拟可转债列表数据（所有可转债价格都超过限制）
-    mock_cb_list = [
-        {"代码": "113527", "名称": "兴业转债", "现价": 120.0, "转股价": 105.0, "正股价": 100.0},
-        {"代码": "113528", "名称": "国君转债", "现价": 125.0, "转股价": 110.0, "正股价": 108.0}
-    ]
+    mock_data = pd.DataFrame({
+        0: ['113527', '113528'],
+        1: ['兴业转债', '国君转债'],
+        2: [120.0, 125.0],  # 现价超过限制
+        3: [0.5, 1.2]
+    })
 
     # 设置mock返回值
-    with patch.object(analyzer.fetcher, 'get_convertible_list') as mock_get_list:
-        mock_get_list.return_value = mock_cb_list
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_data
 
         # 执行筛选（价格<=110，但没有符合条件的）
         result = analyzer.screen_double_low(max_price=110.0, max_premium=30.0, top_n=3)
@@ -198,7 +202,6 @@ def test_screen_double_low_no_matches(analyzer):
         # 验证返回空列表
         assert result is not None
         assert len(result) == 0
-        assert mock_get_list.called
 
 
 def test_screen_double_low_invalid_params(analyzer):
@@ -256,3 +259,72 @@ def test_analyze_convertible_invalid_params(analyzer):
     # 测试None名称
     with pytest.raises(ValueError):
         analyzer.analyze_convertible(cb_code="113527", cb_name=None)
+
+
+def test_analyze_convertible_by_name(analyzer, mock_agent):
+    """测试根据名称分析可转债"""
+    # 模拟可转债列表数据
+    mock_data = pd.DataFrame({
+        0: ['113527', '113528'],
+        1: ['兴业转债', '国君转债'],
+        2: [100.5, 101.2],
+        3: [0.5, 1.2],
+        4: ['601166', '601211'],
+        5: ['兴业银行', '国泰君安']
+    })
+
+    mock_agent.chat.return_value = "兴业转债分析报告..."
+
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_data
+
+        # 执行分析（通过名称）
+        result = analyzer.analyze_convertible_by_name("兴业转债")
+
+        # 验证结果
+        assert result is not None
+        assert result["cb_code"] == "113527"
+        assert result["cb_name"] == "兴业转债"
+
+
+def test_analyze_convertible_by_name_not_found(analyzer, mock_agent):
+    """测试根据名称分析但未找到可转债"""
+    # 模拟可转债列表数据（不包含集智转债）
+    mock_data = pd.DataFrame({
+        0: ['113527'],
+        1: ['兴业转债'],
+        2: [100.5],
+        3: [0.5]
+    })
+
+    mock_agent.chat.return_value = "集智转债分析报告..."
+
+    with patch('akshare.bond_cb_jsl') as mock_bond_cb_jsl:
+        mock_bond_cb_jsl.return_value = mock_data
+
+        # 执行分析（通过名称，但不在列表中）
+        result = analyzer.analyze_convertible_by_name("集智转债")
+
+        # 验证结果（应该使用AI知识库进行分析）
+        assert result is not None
+        assert result["cb_code"] == "未知"
+        assert result["cb_name"] == "集智转债"
+        assert mock_agent.chat.called
+
+
+def test_analyze_convertible_ai_only(analyzer, mock_agent):
+    """测试仅使用AI分析模式"""
+    mock_agent.chat.return_value = "集智转债分析报告..."
+
+    # 执行分析（仅使用AI）
+    result = analyzer.analyze_convertible(
+        cb_code="未知",
+        cb_name="集智转债",
+        use_ai_only=True
+    )
+
+    # 验证结果
+    assert result is not None
+    assert result["cb_code"] == "未知"
+    assert result["cb_name"] == "集智转债"
+    assert mock_agent.chat.called
