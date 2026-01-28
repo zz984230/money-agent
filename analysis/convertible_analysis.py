@@ -12,7 +12,7 @@ import pandas as pd
 from core.agent.base_agent import BaseAgent
 from core.agent.prompts import PromptBuilder
 from data.fetchers.akshare_fetcher import AKShareFetcher
-from data.fetchers.tushare_fetcher import TushareFetcher
+from data.fetchers.akshare_financial_fetcher import AKShareFinancialFetcher
 
 
 # 配置日志
@@ -41,7 +41,7 @@ class ConvertibleBondAnalyzer:
         self.agent = agent
         self.prompt_builder = PromptBuilder()
         self.fetcher = AKShareFetcher()
-        self.tushare_fetcher = None  # 延迟初始化，按需加载
+        self.financial_fetcher = None  # 延迟初始化，按需加载
 
     def analyze_convertible(
         self,
@@ -94,22 +94,15 @@ class ConvertibleBondAnalyzer:
                         logger.debug(f"获取到可转债数据: {cb_data_dict}")
                         data_summary = self._format_convertible_dict(cb_data_dict)
 
-                        # 2. 获取正股财务数据（通过 Tushare）
+                        # 2. 获取正股财务数据（通过 AKShare）
                         stock_code = cb_data_dict.get('stock_code', '')
                         if stock_code:
                             try:
                                 financial_summary = self._get_stock_financial_data(stock_code)
                             except RuntimeError as e:
-                                # Tushare 失败，直接返回错误
-                                logger.error(f"获取正股财务数据失败: {e}")
-                                return {
-                                    "cb_code": cb_code,
-                                    "cb_name": cb_name,
-                                    "data": cb_data_dict,
-                                    "analysis": "",
-                                    "summary": f"获取正股财务数据失败: {e}",
-                                    "error": str(e)
-                                }
+                                # 财务数据获取失败，仅记录警告，继续分析
+                                logger.warning(f"获取正股财务数据失败: {e}")
+                                financial_summary = "（财务数据暂时无法获取）"
                     else:
                         logger.info(f"在列表中未找到可转债 {cb_code}，将使用AI知识库进行分析")
                 else:
@@ -351,16 +344,15 @@ class ConvertibleBondAnalyzer:
             logger.error(f"双低策略筛选时发生错误：{e}", exc_info=True)
             return None
 
-    def _ensure_tushare_fetcher(self) -> None:
-        """确保 TushareFetcher 已初始化"""
-        if self.tushare_fetcher is None:
+    def _ensure_financial_fetcher(self) -> None:
+        """确保 AKShareFinancialFetcher 已初始化"""
+        if self.financial_fetcher is None:
             try:
-                self.tushare_fetcher = TushareFetcher()
-                logger.info("TushareFetcher 初始化成功")
-            except ValueError as e:
-                logger.error(f"TushareFetcher 初始化失败: {e}")
-                # 转换为 RuntimeError 以便上层统一处理
-                raise RuntimeError(f"Tushare Token 未配置: {e}")
+                self.financial_fetcher = AKShareFinancialFetcher()
+                logger.info("AKShareFinancialFetcher 初始化成功")
+            except Exception as e:
+                logger.error(f"AKShareFinancialFetcher 初始化失败: {e}")
+                raise RuntimeError(f"财务数据获取器初始化失败: {e}")
 
     def _get_stock_financial_data(self, stock_code: str) -> str:
         """
@@ -373,49 +365,20 @@ class ConvertibleBondAnalyzer:
             格式化的财务数据字符串
 
         Raises:
-            RuntimeError: 当 Tushare API 调用失败时
+            RuntimeError: 当 AKShare API 调用失败时
         """
-        self._ensure_tushare_fetcher()
+        self._ensure_financial_fetcher()
 
-        # 转换为 Tushare 格式
-        ts_code = TushareFetcher.stock_code_to_ts_code(stock_code)
-        logger.debug(f"获取正股财务数据: {stock_code} -> {ts_code}")
+        logger.debug(f"获取正股财务数据: {stock_code}")
 
         # 获取最新财务数据
-        financials = self.tushare_fetcher.get_latest_financials(ts_code)
+        financials = self.financial_fetcher.get_financial_abstract(stock_code)
 
         if financials is None:
-            raise RuntimeError(f"未能获取 {ts_code} 的财务数据")
+            raise RuntimeError(f"未能获取 {stock_code} 的财务数据")
 
         # 格式化财务数据
-        lines = []
-        lines.append(f"报告期: {financials.get('report_date', 'N/A')}")
-
-        # 利润表
-        income = financials.get('latest_income', {})
-        if income:
-            lines.append("\n利润表:")
-            lines.append(f"  营业收入: {income.get('revenue', 'N/A')}")
-            lines.append(f"  营业利润: {income.get('operate_profit', 'N/A')}")
-            lines.append(f"  净利润: {income.get('n_income', 'N/A')}")
-            lines.append(f"  基本每股收益: {income.get('basic_eps', 'N/A')}")
-
-        # 资产负债表
-        balance = financials.get('latest_balance', {})
-        if balance:
-            lines.append("\n资产负债表:")
-            lines.append(f"  总资产: {balance.get('total_assets', 'N/A')}")
-            lines.append(f"  股东权益: {balance.get('total_hldr_eqy_exc_min_int', 'N/A')}")
-
-        # 现金流量表
-        cashflow = financials.get('latest_cashflow', {})
-        if cashflow:
-            lines.append("\n现金流量表:")
-            lines.append(f"  经营活动现金流: {cashflow.get('n_cashflow_act', 'N/A')}")
-            lines.append(f"  投资活动现金流: {cashflow.get('n_cashflow_inv_act', 'N/A')}")
-            lines.append(f"  筹资活动现金流: {cashflow.get('n_cash_flows_fnc_act', 'N/A')}")
-
-        return "\n".join(lines)
+        return self.financial_fetcher.format_financial_data(financials)
 
     def _format_convertible_dict(self, cb_dict: Dict) -> str:
         """
