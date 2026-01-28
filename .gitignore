@@ -33,6 +33,10 @@ env/
 ENV/
 env.bak/
 venv.bak/
+.venv/
+
+# UV
+.uv/
 
 # IDE
 .vscode/
@@ -63,7 +67,7 @@ data/*
 .ipynb_checkpoints
 
 # pyenv
-.python-version
+# .python-version  # Commented out - UV projects should commit .python-version
 
 # celery
 celerybeat-schedule

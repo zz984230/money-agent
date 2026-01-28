@@ -3,6 +3,7 @@
 **更新时间**: 2026-01-28
 **当前分支**: develop
 **执行方式**: Subagent-Driven Development (superpowers:subagent-driven-development)
+**包管理工具**: UV
 
 ---
 
@@ -10,7 +11,7 @@
 
 **项目名称**: money-agent - A 股 AI 投研竞技场
 **目标**: 构建一个面向中国 A 股市场的 AI 投研辅助平台，支持股票、ETF、可转债的多 AI 模型竞技分析
-**技术栈**: Python 3.10+, GLM-4.7, AKShare, Streamlit, LangChain
+**技术栈**: Python 3.13.5, UV, GLM-4.7, AKShare, Streamlit, LangChain
 
 **项目位置**: D:\code\money-agent
 
@@ -97,6 +98,44 @@
 - 提取魔法数字为类常量，提高可维护性
 - 添加了参数验证 `_validate_criteria` 方法
 - 支持多种筛选条件（PE、ROE、PB、PS、股息率）
+
+### ✅ UV 迁移
+**状态**: 已完成
+**Commit**: (待提交)
+
+**文件变更**:
+- 新增: `pyproject.toml` - UV 项目配置和依赖声明
+- 新增: `uv.lock` - 依赖锁文件（601KB）
+- 新增: `.python-version` - 指定 Python 版本 (3.13.5)
+- 删除: `requirements.txt` - 已迁移到 pyproject.toml
+- 更新: `.gitignore` - 添加 `.venv/` 和 `.uv/` 忽略规则
+
+**关键成果**:
+- 从 requirements.txt 迁移到 UV 包管理
+- 更新依赖版本以支持 Python 3.13:
+  - `numpy`: 1.26.0 → 2.4.1
+  - `pandas`: 2.2.0 → 2.3.3
+  - `langchain`: 0.1.0 → 1.2.7
+  - `langchain-openai`: 0.0.2 → 1.1.7
+  - `pydantic-settings`: 2.1.0 → 2.12.0
+- 所有 24 个测试通过验证
+- 使用 `uv sync` 替代 `pip install -r requirements.txt`
+- 使用 `uv run pytest` 替代 `pytest`
+
+**日常命令变化**:
+```bash
+# 安装依赖
+uv sync
+
+# 添加新依赖
+uv add package-name
+
+# 运行测试
+uv run pytest
+
+# 运行脚本
+uv run script.py
+```
 
 ---
 
@@ -246,7 +285,9 @@ money-agent/
 │   └── plans/
 │       ├── 2026-01-27-ai-investment-agent-design.md
 │       └── 2026-01-27-money-agent-implementation.md
-├── requirements.txt               ✅
+├── pyproject.toml                 ✅ UV 项目配置
+├── uv.lock                        ✅ 依赖锁文件
+├── .python-version                ✅ Python 版本
 ├── .env.example                   ✅
 ├── .gitignore                     ✅
 └── README.md                      ⏳ 需要更新

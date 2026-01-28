@@ -1,0 +1,43 @@
+[project]
+name = "money-agent"
+version = "0.1.0"
+description = "A 股 AI 投研竞技场 - 支持股票、ETF、可转债的多 AI 模型竞技分析"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # 核心框架
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.6.1",
+    # AI 模型
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "zhipuai>=2.1.5",
+    # MCP 工具链
+    "fastmcp>=0.1.0",
+    "mcp>=1.9.0",
+    # 数据源
+    "akshare>=1.18.0",
+    "pandas>=2.2.3",
+    "numpy>=2.1.0",
+    # Web 框架
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "streamlit>=1.31.0",
+    "plotly>=5.18.0",
+    # 工具
+    "requests>=2.31.0",
+    "python-dateutil>=2.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
