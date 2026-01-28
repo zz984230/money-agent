@@ -60,6 +60,7 @@ logs/*
 data/*
 !data/__init__.py
 !data/fetchers/__init__.py
+!data/fetchers/akshare_fetcher.py
 *.json
 *.pkl
 

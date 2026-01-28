@@ -36,8 +36,16 @@ dev = [
     "pytest-cov>=4.0.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "data*", "config*", "analysis*", "utils*"]
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"

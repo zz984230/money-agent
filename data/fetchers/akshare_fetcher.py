@@ -116,3 +116,69 @@ class AKShareFetcher:
         if not stock_info.empty:
             return stock_info.iloc[0].to_dict()
         return {}
+
+    def get_index_daily(self, index_code: str, date: str) -> pd.DataFrame:
+        """获取指数日线数据
+
+        Args:
+            index_code: 指数代码（如 000001）
+            date: 目标日期，格式：YYYY-MM-DD
+
+        Returns:
+            DataFrame: 包含指数日线数据的DataFrame
+        """
+        # 根据指数代码确定市场前缀
+        if index_code.startswith('00'):
+            symbol = f"sh{index_code}"
+        elif index_code.startswith('30') or index_code.startswith('39'):
+            symbol = f"sz{index_code}"
+        else:
+            symbol = f"sh{index_code}"
+
+        df = ak.stock_zh_index_daily(symbol=symbol)
+
+        # 过滤日期范围
+        if 'date' in df.columns:
+            df['date'] = df['date'].astype(str)
+            df = df[df['date'] <= date]
+            if len(df) > 30:
+                df = df.tail(30)
+
+        return df
+
+    def get_market_stats(self) -> Optional[Dict]:
+        """获取市场统计数据
+
+        Returns:
+            Dict: 包含市场统计数据的字典，如果获取失败则返回None
+        """
+        try:
+            # 获取A股市场概况
+            df = ak.stock_zh_a_spot_em()
+
+            if df.empty:
+                return None
+
+            # 统计涨跌情况
+            up_count = len(df[df['涨跌幅'] > 0])
+            down_count = len(df[df['涨跌幅'] < 0])
+            unchanged_count = len(df[df['涨跌幅'] == 0])
+
+            # 统计涨跌停（假设涨跌停为9.9%以上）
+            limit_up_count = len(df[df['涨跌幅'] >= 9.9])
+            limit_down_count = len(df[df['涨跌幅'] <= -9.9])
+
+            # 计算总成交额
+            total_amount = df['成交额'].sum() if '成交额' in df.columns else 0
+
+            return {
+                "up_count": up_count,
+                "down_count": down_count,
+                "unchanged_count": unchanged_count,
+                "limit_up_count": limit_up_count,
+                "limit_down_count": limit_down_count,
+                "total_amount": total_amount
+            }
+
+        except Exception:
+            return None
