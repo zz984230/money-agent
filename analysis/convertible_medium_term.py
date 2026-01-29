@@ -43,6 +43,35 @@ class ConvertibleBondMediumTermAnalyzer:
         self.fetcher = AKShareFetcher()
         self.factor_calculator = MediumTermFactorCalculator()
 
+    def _get_popular_industries(self) -> List[Dict]:
+        """
+        获取预定义的热门行业列表
+
+        Returns:
+            行业列表，使用东方财富的行业名称
+        """
+        # 使用东方财富行业板块名称
+        popular_industries = [
+            {'industry_code': '新能源', 'name': '新能源'},
+            {'industry_code': '半导体', 'name': '半导体'},
+            {'industry_code': '人工智能', 'name': '人工智能'},
+            {'industry_code': '锂电池', 'name': '锂电池'},
+            {'industry_code': '光伏设备', 'name': '光伏设备'},
+            {'industry_code': '国防军工', 'name': '国防军工'},
+            {'industry_code': '医药生物', 'name': '医药生物'},
+            {'industry_code': '食品饮料', 'name': '食品饮料'},
+            {'industry_code': '电子元件', 'name': '电子元件'},
+            {'industry_code': '汽车整车', 'name': '汽车整车'},
+            {'industry_code': '计算机应用', 'name': '计算机应用'},
+            {'industry_code': '通信设备', 'name': '通信设备'},
+            {'industry_code': '电力行业', 'name': '电力行业'},
+            {'industry_code': '有色金属', 'name': '有色金属'},
+            {'industry_code': '化工行业', 'name': '化工行业'},
+        ]
+
+        logger.info(f"使用预定义行业列表，共 {len(popular_industries)} 个行业")
+        return popular_industries
+
     def screen_top_industries(
         self,
         top_n: int = 5,
@@ -61,8 +90,9 @@ class ConvertibleBondMediumTermAnalyzer:
         try:
             logger.info(f"开始筛选前{top_n}个强势行业")
 
-            # 1. 获取所有行业
-            industries = self.fetcher.get_industry_list()
+            # 1. 获取行业列表（使用预定义的热门行业列表以提高响应速度）
+            industries = self._get_popular_industries()
+
             if not industries:
                 logger.warning("获取行业列表失败")
                 return []
@@ -86,9 +116,9 @@ class ConvertibleBondMediumTermAnalyzer:
                 try:
                     logger.info(f"正在处理行业 {idx+1}/{max_industries}: {industry_name}")
 
-                    # 获取行业指数数据
+                    # 获取行业指数数据（直接使用行业名称）
                     industry_df = self.fetcher.get_industry_index_hist(
-                        f"_{industry_code}",
+                        industry_name,  # 直接使用行业名称
                         days=120
                     )
 
