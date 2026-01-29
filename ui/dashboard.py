@@ -18,6 +18,10 @@ from analysis.screening import StockScreener
 from analysis.market_analysis import MarketAnalyzer
 from analysis.etf_analysis import ETFAnalyzer
 from analysis.convertible_analysis import ConvertibleBondAnalyzer
+from analysis.convertible_technical_analysis import (
+    ConvertibleBondTechnicalAnalyzer,
+    TechnicalAnalysisResult
+)
 
 # 页面配置
 st.set_page_config(
@@ -91,17 +95,18 @@ def initialize_agent():
 def get_analyzers(_agent):
     """获取分析器实例（缓存以提高性能）"""
     if _agent is None:
-        return None, None, None, None
+        return None, None, None, None, None
 
     try:
         screener = StockScreener(_agent)
         market_analyzer = MarketAnalyzer(_agent)
         etf_analyzer = ETFAnalyzer(_agent)
         cb_analyzer = ConvertibleBondAnalyzer(_agent)
-        return screener, market_analyzer, etf_analyzer, cb_analyzer
+        cb_technical_analyzer = ConvertibleBondTechnicalAnalyzer(_agent)
+        return screener, market_analyzer, etf_analyzer, cb_analyzer, cb_technical_analyzer
     except Exception as e:
         st.error(f"初始化分析器失败: {str(e)}")
-        return None, None, None, None
+        return None, None, None, None, None
 
 
 def render_home_page():
@@ -694,11 +699,142 @@ def render_convertible_analysis_page(cb_analyzer):
                     """, unsafe_allow_html=True)
 
 
+def render_convertible_technical_page(cb_technical_analyzer):
+    """渲染可转债技术面分析页面"""
+    st.markdown('<div class="sub-header">📊 可转债技术面分析</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="info-box">
+        可转债技术面分析，基于价格、成交量、技术指标等数据进行深度分析。
+        <br><small>支持单券详细分析和批量技术面筛选。</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab1, tab2 = st.tabs(["单券分析", "技术面筛选"])
+
+    with tab1:
+        st.subheader("单券技术面分析")
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            cb_code = st.text_input(
+                "转债代码",
+                placeholder="如113527",
+                help="输入6位可转债代码",
+                key="technical_cb_code"
+            )
+
+        with col2:
+            st.write("")  # 占位
+            analyze_btn = st.button("开始分析", type="primary", key="technical_analyze_btn")
+
+        if analyze_btn and cb_code:
+            with st.spinner("正在分析..."):
+                try:
+                    # 首先获取转债名称
+                    from data.fetchers.akshare_fetcher import AKShareFetcher
+                    fetcher = AKShareFetcher()
+                    cb_list = fetcher.get_convertible_list()
+
+                    cb_name = ""
+                    if cb_list:
+                        for cb in cb_list:
+                            if cb.get('cb_code') == cb_code:
+                                cb_name = cb.get('cb_name', '')
+                                break
+
+                    if not cb_name:
+                        st.error(f"未找到代码为 {cb_code} 的可转债，请检查代码是否正确")
+                        return
+
+                    result = cb_technical_analyzer.analyze_technical(cb_code, cb_name)
+
+                    if result:
+                        # 显示基础信息
+                        st.success(f"分析完成：{result.cb_name}")
+
+                        # 基础信息卡片
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("当前价格", f"{result.technical_data.price:.2f}元")
+                        with col2:
+                            st.metric("涨跌幅", f"{result.technical_data.change_percent:.2f}%")
+                        with col3:
+                            st.metric("溢价率", f"{result.technical_data.premium_rate:.2f}%")
+                        with col4:
+                            # 显示信号类型
+                            signal_type = "技术面"
+                            if result.signals and isinstance(result.signals, list) and len(result.signals) > 0:
+                                signal_type = result.signals[0] if len(result.signals[0]) < 10 else "技术信号"
+                            st.metric("类型", signal_type)
+
+                        # AI分析结果
+                        st.subheader("AI分析")
+                        st.markdown(result.analysis)
+
+                        # 投资建议
+                        if result.recommendation:
+                            st.info(f"💡 投资建议：{result.recommendation}")
+                    else:
+                        st.error("分析失败，请检查转债代码或稍后重试")
+                except Exception as e:
+                    st.error(f"分析出错：{str(e)}")
+
+    with tab2:
+        st.subheader("技术面筛选")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            price_min = st.number_input("最低价格", value=90, min_value=0, max_value=300, key="screen_price_min")
+            price_max = st.number_input("最高价格", value=110, min_value=0, max_value=300, key="screen_price_max")
+
+        with col2:
+            premium_max = st.number_input("最大溢价率(%)", value=30, min_value=0, max_value=100, key="screen_premium_max")
+
+        with col3:
+            top_n = st.number_input("返回数量", value=20, min_value=1, max_value=100, key="screen_top_n")
+
+        if st.button("开始筛选", key="screen_start_btn"):
+            with st.spinner("正在筛选..."):
+                try:
+                    criteria = {
+                        "price_range": (price_min, price_max),
+                        "premium_max": premium_max,
+                    }
+
+                    results = cb_technical_analyzer.screen_by_technical(criteria, top_n=top_n)
+
+                    if results and len(results) > 0:
+                        st.success(f"筛选完成，找到 {len(results)} 只转债")
+
+                        # 转换为DataFrame显示
+                        results_df = pd.DataFrame(results)
+
+                        st.dataframe(
+                            results_df[['cb_code', 'cb_name', 'price', 'premium', 'score']],
+                            column_config={
+                                "cb_code": "代码",
+                                "cb_name": "名称",
+                                "price": st.column_config.NumberColumn("价格", format="%.2f"),
+                                "premium": st.column_config.NumberColumn("溢价率", format="%.2f"),
+                                "score": st.column_config.NumberColumn("评分", format="%.2f")
+                            },
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    else:
+                        st.warning("未找到符合条件的转债")
+                except Exception as e:
+                    st.error(f"筛选出错：{str(e)}")
+
+
 def main():
     """主函数"""
     # 初始化 Agent 和分析器
     agent = initialize_agent()
-    screener, market_analyzer, etf_analyzer, cb_analyzer = get_analyzers(agent)
+    screener, market_analyzer, etf_analyzer, cb_analyzer, cb_technical_analyzer = get_analyzers(agent)
 
     # 侧边栏导航
     with st.sidebar:
@@ -707,7 +843,7 @@ def main():
 
         page = st.radio(
             "选择功能",
-            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债分析"],
+            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债分析", "可转债技术面"],
             label_visibility="collapsed"
         )
 
@@ -739,6 +875,11 @@ def main():
             st.success("✅ 可转债模块就绪")
         else:
             st.error("❌ 可转债模块未就绪")
+
+        if cb_technical_analyzer is not None:
+            st.success("✅ 可转债技术面模块就绪")
+        else:
+            st.error("❌ 可转债技术面模块未就绪")
 
         st.markdown("---")
 
@@ -783,6 +924,12 @@ def main():
             st.error("可转债模块未初始化，请检查配置！")
         else:
             render_convertible_analysis_page(cb_analyzer)
+
+    elif page == "可转债技术面":
+        if cb_technical_analyzer is None:
+            st.error("可转债技术面模块未初始化，请检查配置！")
+        else:
+            render_convertible_technical_page(cb_technical_analyzer)
 
 
 if __name__ == "__main__":
