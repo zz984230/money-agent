@@ -313,3 +313,89 @@ def test_lof_etf_gamble_analyzer_initialization():
     assert hasattr(analyzer, 'detector')
     assert hasattr(analyzer, 'factor_analyzer')
     assert hasattr(analyzer, 'analyze_single')
+    assert hasattr(analyzer, 'screen_and_analyze')
+    assert hasattr(analyzer, 'get_top_factors_across_funds')
+
+
+@pytest.mark.integration
+def test_screen_and_analyze():
+    """测试批量筛选分析"""
+    from unittest.mock import Mock
+    from core.agent.base_agent import BaseAgent
+
+    mock_agent = Mock(spec=BaseAgent)
+    mock_agent.chat = Mock(return_value="测试AI分析结果...")
+
+    analyzer = LOFETFGambleAnalyzer(mock_agent)
+
+    criteria = {
+        'window': 3,
+        'threshold': 0.15,
+        'fund_types': ['commodity']
+    }
+
+    results = analyzer.screen_and_analyze(criteria, top_n=5)
+
+    # 验证结果
+    assert isinstance(results, list)
+    # 注意：实际数量取决于数据可用性
+    if len(results) > 0:
+        assert all(isinstance(r, GambleAnalysisResult) for r in results)
+
+
+def test_get_top_factors_across_funds():
+    """测试跨标的因子汇总"""
+    from core.agent.base_agent import BaseAgent
+    from unittest.mock import Mock
+
+    # 创建模拟结果
+    importance1 = pd.DataFrame({
+        'feature': ['momentum_5', 'volume_ratio', 'rsi_14'],
+        'importance': [0.4, 0.3, 0.2]
+    })
+
+    importance2 = pd.DataFrame({
+        'feature': ['volume_ratio', 'momentum_5', 'macd'],
+        'importance': [0.35, 0.25, 0.15]
+    })
+
+    result1 = GambleAnalysisResult(
+        symbol="001", name="Fund1", fund_type="LOF",
+        abnormal_events_count=5, abnormal_events=[],
+        current_factors={}, feature_importance=importance1
+    )
+
+    result2 = GambleAnalysisResult(
+        symbol="002", name="Fund2", fund_type="ETF",
+        abnormal_events_count=3, abnormal_events=[],
+        current_factors={}, feature_importance=importance2
+    )
+
+    # 需要一个analyzer实例来调用方法
+    from core.agent.base_agent import BaseAgent
+    mock_agent = Mock(spec=BaseAgent)
+    analyzer = LOFETFGambleAnalyzer(mock_agent)
+
+    factor_ranking = analyzer.get_top_factors_across_funds([result1, result2])
+
+    assert len(factor_ranking) > 0
+    assert 'momentum_5' in factor_ranking['feature'].values
+    assert 'volume_ratio' in factor_ranking['feature'].values
+
+    # momentum_5应该出现2次
+    momentum_row = factor_ranking[factor_ranking['feature'] == 'momentum_5']
+    assert momentum_row['occurrence_count'].values[0] == 2
+
+
+def test_get_top_factors_across_funds_empty():
+    """测试空结果列表"""
+    from core.agent.base_agent import BaseAgent
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=BaseAgent)
+    analyzer = LOFETFGambleAnalyzer(mock_agent)
+
+    factor_ranking = analyzer.get_top_factors_across_funds([])
+
+    assert len(factor_ranking) == 0
+    assert 'feature' in factor_ranking.columns

@@ -472,3 +472,126 @@ class LOFETFGambleAnalyzer:
         )
 
         return result
+
+    def screen_and_analyze(
+        self,
+        criteria: Optional[Dict] = None,
+        top_n: int = 20
+    ) -> List[GambleAnalysisResult]:
+        """
+        筛选并对多个标的进行AI分析
+
+        Args:
+            criteria: 筛选条件，可包含:
+                - window: 时间窗口（默认3）
+                - threshold: 波动阈值（默认0.15）
+                - fund_types: 基金类型列表 ['LOF', 'ETF'] 或 ['commodity', 'overseas']
+            top_n: 返回数量
+
+        Returns:
+            分析结果列表
+        """
+        if criteria is None:
+            criteria = {}
+
+        window = criteria.get('window', 3)
+        threshold = criteria.get('threshold', 0.15)
+        fund_types = criteria.get('fund_types', ['commodity', 'overseas'])
+
+        logger.info(f"开始筛选分析，窗口={window}天，阈值={threshold*100}%")
+
+        # 1. 获取目标列表
+        target_list = []
+        if 'commodity' in fund_types:
+            commodity_lof = self.fetcher.get_commodity_lof_list()
+            target_list.extend(commodity_lof)
+
+        if 'overseas' in fund_types:
+            overseas_etf = self.fetcher.get_overseas_etf_list()
+            target_list.extend(overseas_etf)
+
+        logger.info(f"获取到 {len(target_list)} 个目标标的")
+
+        # 2. 快速筛选：检测异常波动
+        screened = []
+        for item in target_list[:top_n * 3]:  # 多取一些用于筛选
+            symbol = item['code']
+            name = item['name']
+            fund_type = item['type']
+
+            try:
+                df = self.fetcher.get_lof_etf_history(symbol, period=180)
+                if df is None or len(df) < 100:
+                    continue
+
+                abnormal_dates, _ = self.detector.detect_sudden_moves(
+                    df['close'], window=window, threshold=threshold
+                )
+
+                if len(abnormal_dates) > 0:
+                    screened.append({
+                        'symbol': symbol,
+                        'name': name,
+                        'fund_type': fund_type,
+                        'events_count': len(abnormal_dates),
+                        'recent_change': df['close'].pct_change(window).iloc[-1]
+                    })
+
+            except Exception as e:
+                logger.error(f"筛选 {symbol} 失败: {e}")
+                continue
+
+        # 3. 按异常事件数量排序，取前top_n个
+        screened.sort(key=lambda x: x['events_count'], reverse=True)
+        top_targets = screened[:top_n]
+
+        logger.info(f"筛选出 {len(top_targets)} 个目标进行深度分析")
+
+        # 4. 深度分析
+        results = []
+        for target in top_targets:
+            try:
+                result = self.analyze_single(
+                    target['symbol'],
+                    target['name'],
+                    target['fund_type']
+                )
+                if result is not None:
+                    results.append(result)
+
+            except Exception as e:
+                logger.error(f"分析 {target['symbol']} 失败: {e}")
+                continue
+
+        logger.info(f"完成 {len(results)} 个标的的分析")
+        return results
+
+    def get_top_factors_across_funds(self, results: List[GambleAnalysisResult]) -> pd.DataFrame:
+        """
+        获取所有标的中的重要因子
+
+        Args:
+            results: 分析结果列表
+
+        Returns:
+            因子重要性排序DataFrame
+        """
+        all_importances = []
+        for result in results:
+            if result.feature_importance is not None and len(result.feature_importance) > 0:
+                importance_df = result.feature_importance.copy()
+                importance_df['fund'] = result.symbol
+                importance_df['fund_name'] = result.name
+                all_importances.append(importance_df)
+
+        if not all_importances:
+            return pd.DataFrame(columns=['feature', 'mean_importance', 'occurrence_count'])
+
+        combined = pd.concat(all_importances, ignore_index=True)
+
+        # 计算因子在所有基金中的平均重要性
+        factor_ranking = combined.groupby('feature')['importance'].agg(['mean', 'count']).reset_index()
+        factor_ranking = factor_ranking.sort_values('mean', ascending=False)
+        factor_ranking.columns = ['feature', 'mean_importance', 'occurrence_count']
+
+        return factor_ranking
