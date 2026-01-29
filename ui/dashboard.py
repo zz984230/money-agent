@@ -959,7 +959,7 @@ def render_abnormal_screening_page(gamble_analyzer):
         # 执行筛选
         with st.spinner("正在筛选分析，请稍候..."):
             try:
-                results = gamble_analyzer.screen_and_analyze(criteria, top_n)
+                results = cached_screen_and_analyze(gamble_analyzer, criteria, top_n)
 
                 if results:
                     st.markdown(f"""
@@ -1058,7 +1058,8 @@ def render_ai_analysis_page(gamble_analyzer):
     if analyze_btn and analysis_code:
         with st.spinner("正在分析，请稍候..."):
             try:
-                result = gamble_analyzer.analyze_single(
+                result = cached_analyze_single(
+                    gamble_analyzer,
                     analysis_code,
                     f"基金{analysis_code}",  # 简化名称
                     "LOF"  # 默认类型
@@ -1250,6 +1251,18 @@ def render_factor_summary_page(gamble_analyzer):
 
             except Exception as e:
                 st.error(f"分析失败: {str(e)}")
+
+
+@st.cache_data(ttl=1800)  # 30分钟缓存
+def cached_screen_and_analyze(_analyzer, criteria, top_n):
+    """缓存的筛选分析"""
+    return _analyzer.screen_and_analyze(criteria, top_n)
+
+
+@st.cache_data(ttl=1800)
+def cached_analyze_single(_analyzer, symbol, name, fund_type):
+    """缓存的单个分析"""
+    return _analyzer.analyze_single(symbol, name, fund_type)
 
 
 def main():
