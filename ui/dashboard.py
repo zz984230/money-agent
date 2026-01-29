@@ -1156,8 +1156,100 @@ def render_factor_summary_page(gamble_analyzer):
     """渲染因子分析汇总页面"""
     st.subheader("因子分析汇总")
 
-    st.info("因子分析汇总功能开发中，敬请期待...")
-    # TODO: 实现跨标的因子重要性排名页面
+    st.markdown("""
+    <div class="info-box">
+        对多个标的进行批量分析后，查看跨标的因子重要性排名。
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("factor_summary_form"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            summary_window = st.selectbox("时间窗口", [2, 3, 5], index=1)
+
+        with col2:
+            summary_threshold = st.slider("波动阈值", 5, 30, 15)
+            summary_fund_types = st.multiselect(
+                "标的",
+                ["大宗商品LOF", "海外ETF"],
+                default=["大宗商品LOF", "海外ETF"]
+            )
+
+        summary_top_n = st.slider("分析数量", 10, 50, 20)
+
+        submitted = st.form_submit_button("开始分析", use_container_width=True)
+
+    if submitted:
+        if not summary_fund_types:
+            st.error("请选择标的类型")
+            return
+
+        with st.spinner("正在分析多个标的，请稍候..."):
+            try:
+                fund_type_map = {"大宗商品LOF": "commodity", "海外ETF": "overseas"}
+                criteria_types = [fund_type_map[t] for t in summary_fund_types]
+
+                criteria = {
+                    'window': summary_window,
+                    'threshold': summary_threshold / 100,
+                    'fund_types': criteria_types
+                }
+
+                results = gamble_analyzer.screen_and_analyze(criteria, summary_top_n)
+
+                if results:
+                    st.success(f"分析完成！共分析 {len(results)} 个标的")
+
+                    # 获取因子排名
+                    factor_ranking = gamble_analyzer.get_top_factors_across_funds(results)
+
+                    if len(factor_ranking) > 0:
+                        st.markdown("### 跨标的因子重要性排名")
+
+                        st.dataframe(
+                            factor_ranking,
+                            column_config={
+                                "feature": st.column_config.TextColumn("因子", width="medium"),
+                                "mean_importance": st.column_config.NumberColumn("平均重要性", format="%.3f"),
+                                "occurrence_count": st.column_config.NumberColumn("出现次数")
+                            },
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        # 因子说明
+                        st.markdown("---")
+                        st.markdown("### 因子说明")
+
+                        factor_descriptions = {
+                            'momentum_5': '5日价格动量 - 反映短期价格趋势',
+                            'momentum_10': '10日价格动量 - 反映中期价格趋势',
+                            'momentum_20': '20日价格动量 - 反映长期价格趋势',
+                            'volatility_20': '20日波动率 - 反映价格波动程度',
+                            'atr_14': 'ATR(14) - 平均真实波幅',
+                            'volume_ratio': '量比 - 当前成交量/20日平均成交量',
+                            'volume_ma_5': '5日/20日成交量比',
+                            'rsi_14': 'RSI(14) - 相对强弱指标',
+                            'macd': 'MACD - 指数平滑异同移动平均线',
+                            'bollinger_bandwidth': '布林带带宽 - 反映价格波动范围',
+                            'pv_divergence': '价量背离 - 价格与成交量变化差异',
+                            'spread_pct': '买卖价差百分比',
+                            'liquidity_impact': '流动性冲击',
+                            'price_trend': '价格趋势方向',
+                            'vol_clustering': '波动聚集性'
+                        }
+
+                        for _, row in factor_ranking.head(10).iterrows():
+                            factor = row['feature']
+                            desc = factor_descriptions.get(factor, '暂无说明')
+                            st.markdown(f"**{factor}**: {desc}")
+
+                else:
+                    st.warning("未找到符合条件的标的")
+
+            except Exception as e:
+                st.error(f"分析失败: {str(e)}")
 
 
 def main():
