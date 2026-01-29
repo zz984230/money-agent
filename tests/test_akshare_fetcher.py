@@ -226,3 +226,68 @@ class TestAKShareFetcherConvertible:
         result = fetcher.get_convertible_realtime('113527')
 
         assert result is None
+
+    @patch('akshare.bond_zh_hs_cov_daily')
+    def test_get_convertible_history_success(self, mock_bond_daily, fetcher):
+        """测试获取历史数据"""
+        mock_history = pd.DataFrame({
+            'date': pd.date_range('2025-01-01', periods=30),
+            'close': [100 + i for i in range(30)],
+            'volume': [100000] * 30,
+        })
+        mock_bond_daily.return_value = mock_history
+
+        result = fetcher.get_convertible_history('113527', days=30)
+
+        assert result is not None
+        assert len(result) == 30
+        assert 'close' in result.columns
+
+    def test_calculate_indicators(self, fetcher):
+        """测试技术指标计算"""
+        # 构造测试数据
+        dates = pd.date_range('2025-01-01', periods=30)
+        prices = [100 + i for i in range(30)]
+        df = pd.DataFrame({
+            'date': dates,
+            'close': prices,
+            'volume': [100000] * 30,
+        })
+
+        indicators = fetcher.calculate_indicators(df)
+
+        assert 'ma5' in indicators
+        assert 'ma20' in indicators
+        assert 'volatility_20d' in indicators
+        assert indicators['ma5'] > indicators['ma20']  # 上涨趋势
+    @patch('akshare.bond_zh_hs_cov_daily')
+    def test_get_convertible_history_empty_response(self, mock_bond_daily, fetcher):
+        """测试API返回空数据"""
+        mock_bond_daily.return_value = pd.DataFrame()
+        result = fetcher.get_convertible_history('113527')
+        assert result is None
+
+    @patch('akshare.bond_zh_hs_cov_daily')
+    def test_get_convertible_history_api_error(self, mock_bond_daily, fetcher):
+        """测试API调用失败"""
+        mock_bond_daily.side_effect = Exception("Network error")
+        result = fetcher.get_convertible_history('113527')
+        assert result is None
+
+    def test_calculate_indicators_insufficient_data(self, fetcher):
+        """测试数据不足时的指标计算"""
+        df = pd.DataFrame({'close': [100, 101]})
+        indicators = fetcher.calculate_indicators(df)
+        assert 'ma5' not in indicators
+        assert 'ma20' not in indicators
+        assert 'trend_5d' not in indicators
+
+    def test_get_convertible_history_invalid_cb_code(self, fetcher):
+        """测试无效的可转债代码"""
+        assert fetcher.get_convertible_history('') is None
+        assert fetcher.get_convertible_history(None) is None
+
+    def test_get_convertible_history_invalid_days(self, fetcher):
+        """测试无效的天数参数"""
+        assert fetcher.get_convertible_history('113527', days=0) is None
+        assert fetcher.get_convertible_history('113527', days=-1) is None

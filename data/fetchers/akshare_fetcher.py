@@ -294,3 +294,99 @@ class AKShareFetcher:
         except Exception as e:
             logger.error(f"获取可转债 {cb_code} 实时数据失败: {e}", exc_info=True)
             return None
+
+    def get_convertible_history(
+        self,
+        cb_code: str,
+        days: int = 60
+    ) -> Optional[pd.DataFrame]:
+        """
+        获取可转债历史价格数据
+
+        Args:
+            cb_code: 可转债代码
+            days: 获取最近N天数据
+
+        Returns:
+            包含历史价格数据的DataFrame
+        """
+        # 输入验证
+        if not cb_code or not isinstance(cb_code, str):
+            logger.warning("可转债代码无效")
+            return None
+        if days <= 0:
+            logger.warning(f"天数参数无效: {days}")
+            return None
+
+        try:
+            logger.debug(f"开始获取可转债 {cb_code} 的历史价格数据（最近{days}天）")
+
+            # AKShare的历史数据接口
+            df = ak.bond_zh_hs_cov_daily(symbol=cb_code)
+
+            if df is None or df.empty:
+                logger.warning(f"获取可转债 {cb_code} 历史数据失败：返回数据为空")
+                return None
+
+            # 处理列名
+            df = self._process_daily_data(df)
+
+            # 筛选最近N天
+            if 'date' in df.columns:
+                df = df.sort_values('date').tail(days)
+
+            logger.debug(f"成功获取可转债 {cb_code} 的历史价格数据，共{len(df)}条记录")
+            return df
+
+        except Exception as e:
+            logger.error(f"获取可转债 {cb_code} 历史数据失败: {e}", exc_info=True)
+            return None
+
+    def calculate_indicators(
+        self,
+        history_df: pd.DataFrame
+    ) -> Dict[str, float]:
+        """
+        计算技术指标
+
+        Args:
+            history_df: 历史价格DataFrame
+
+        Returns:
+            包含技术指标的字典
+        """
+        if history_df is None or history_df.empty:
+            logger.debug("历史数据为空，无法计算技术指标")
+            return {}
+
+        try:
+            result = {}
+
+            # 计算移动平均线
+            if 'close' in history_df.columns and len(history_df) >= 5:
+                result['ma5'] = history_df['close'].tail(5).mean()
+                logger.debug(f"计算MA5: {result['ma5']:.2f}")
+
+            if len(history_df) >= 20:
+                result['ma20'] = history_df['close'].tail(20).mean()
+                logger.debug(f"计算MA20: {result['ma20']:.2f}")
+
+                # 计算20日波动率（标准差/均值）
+                returns = history_df['close'].pct_change().dropna()
+                if len(returns) > 0:
+                    result['volatility_20d'] = returns.tail(20).std() * 100
+                    logger.debug(f"计算20日波动率: {result['volatility_20d']:.2f}%")
+
+            # 价格趋势
+            if len(history_df) >= 5:
+                recent = history_df['close'].tail(5).values
+                if len(recent) >= 2:
+                    result['trend_5d'] = (recent[-1] - recent[0]) / recent[0] * 100
+                    logger.debug(f"计算5日涨跌幅: {result['trend_5d']:.2f}%")
+
+            logger.debug(f"技术指标计算完成，共{len(result)}个指标")
+            return result
+
+        except Exception as e:
+            logger.error(f"计算技术指标失败: {e}", exc_info=True)
+            return {}
