@@ -530,39 +530,195 @@ def render_convertible_analysis_page(cb_technical_analyzer):
 
 
 def render_convertible_factors_page():
-    """渲染可转债量化因子页面（待开发）"""
+    """渲染可转债量化因子页面"""
+
     st.markdown("""
     <div class="info-box">
-        可转债量化因子分析，帮助识别高潜力转债标的。
-        <br><small>功能开发中，敬请期待...</small>
+        可转债中期量化分析，基于行业趋势自上而下筛选优质标的。
+        <br><small>支持快速筛选和行业探索两种模式。</small>
     </div>
     """, unsafe_allow_html=True)
 
-    st.info("🚧 量化因子分析功能正在开发中，即将推出！")
+    tab1, tab2 = st.tabs(["快速筛选", "行业探索"])
 
-    # 预览即将推出的功能
-    col1, col2, col3 = st.columns(3)
+    with tab1:
+        render_medium_term_quick_screen()
 
-    with col1:
-        st.markdown("""
-        ### 🔮 双低因子
-        • 价格 + 溢价率
-        • 价值发现策略
-        """)
+    with tab2:
+        render_medium_term_industry_explore()
 
-    with col2:
-        st.markdown("""
-        ### 📊 动量因子
-        • 价格趋势
-        • 成交量变化
-        """)
 
-    with col3:
-        st.markdown("""
-        ### ⚡ 波动率因子
-        • 历史波动率
-        • 隐含波动率
-        """)
+def render_medium_term_quick_screen():
+    """渲染中期量化快速筛选页面"""
+    st.subheader("快速筛选")
+
+    # 筛选参数配置
+    with st.form("medium_term_screen_form"):
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            top_n_industries = st.slider(
+                "强势行业数量",
+                min_value=3,
+                max_value=10,
+                value=5,
+                help="筛选出的强势行业数量"
+            )
+
+        with col2:
+            top_n_bonds = st.slider(
+                "每行业转债数量",
+                min_value=3,
+                max_value=10,
+                value=5,
+                help="每个行业返回的转债数量"
+            )
+
+        with col3:
+            premium_max = st.slider(
+                "溢价率上限(%)",
+                min_value=0,
+                max_value=50,
+                value=20,
+                help="只显示溢价率低于此值的转债"
+            )
+
+        with col4:
+            bond_type = st.selectbox(
+                "转债类型",
+                options=["全部", "偏股型", "平衡型", "偏债型"],
+                index=0,
+                help="筛选指定类型的转债"
+            )
+
+        enable_signals = st.checkbox("启用止盈止损提醒", value=True)
+
+        submitted = st.form_submit_button("开始筛选", use_container_width=True)
+
+    if submitted:
+        # 获取分析器
+        agent = st.session_state.get('agent')
+        if not agent:
+            st.error("AI Agent未初始化")
+            return
+
+        try:
+            from analysis.convertible_medium_term import ConvertibleBondMediumTermAnalyzer
+
+            analyzer = ConvertibleBondMediumTermAnalyzer(agent)
+
+            # 执行筛选
+            with st.spinner("正在筛选，请稍候..."):
+                bond_type_filter = None if bond_type == "全部" else bond_type
+
+                result = analyzer.medium_term_screen(
+                    top_n_industries=top_n_industries,
+                    top_n_bonds=top_n_bonds,
+                    premium_max=premium_max,
+                    bond_type_filter=bond_type_filter
+                )
+
+            if result and result.bonds:
+                # 显示筛选摘要
+                st.success(f"筛选完成！识别出 {len(result.industries)} 个强势行业，共 {len(result.bonds)} 只转债")
+
+                # 视图切换
+                view_mode = st.radio(
+                    "展示视图",
+                    options=["按行业分组", "统一排名"],
+                    horizontal=True
+                )
+
+                if view_mode == "按行业分组":
+                    render_grouped_view(result, enable_signals)
+                else:
+                    render_ranked_view(result, enable_signals)
+
+                # AI分析
+                if result.ai_analysis:
+                    with st.expander("查看AI投资建议", expanded=True):
+                        st.markdown(result.ai_analysis)
+
+            else:
+                st.warning("未找到符合条件的转债，请尝试调整筛选条件")
+
+        except Exception as e:
+            st.error(f"筛选失败: {str(e)}")
+
+
+def render_medium_term_industry_explore():
+    """渲染行业探索页面"""
+    st.subheader("行业探索")
+
+    st.info("行业探索功能开发中，敬请期待...")
+
+    # TODO: 实现行业排行榜和点击展开功能
+
+
+def render_grouped_view(result, enable_signals):
+    """渲染按行业分组的视图"""
+    # 按行业分组
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for bond in result.bonds:
+        grouped[bond['industry']].append(bond)
+
+    for industry in result.industries:
+        bonds = grouped.get(industry.industry_name, [])
+        if not bonds:
+            continue
+
+        with st.expander(
+            f"📊 {industry.industry_name} "
+            f"(相对强弱: {industry.relative_strength:.1f}%, "
+            f"行业排名: {result.industries.index(industry)+1}/{len(result.industries)})"
+        ):
+            # 显示该行业的转债
+            for bond in bonds:
+                signals = []
+                if enable_signals:
+                    if bond.get('score', 0) > 70:
+                        signals.append("✅强")
+                    if bond['premium_rate'] > 15:
+                        signals.append("⚠️溢价高")
+
+                signal_text = " ".join(signals) if signals else ""
+
+                st.markdown(
+                    f"**{bond['cb_name']}** ({bond['cb_code']}) - "
+                    f"溢价率 {bond['premium_rate']:.1f}% - "
+                    f"评分 {bond['score']:.1f} {signal_text}"
+                )
+
+
+def render_ranked_view(result, enable_signals):
+    """渲染统一排名视图"""
+    import pandas as pd
+
+    df = pd.DataFrame(result.bonds)
+
+    # 添加信号列
+    if enable_signals:
+        df['信号'] = df.apply(
+            lambda row: "✅强势" if row['score'] > 70 else ("⚠️关注" if row['score'] > 60 else ""),
+            axis=1
+        )
+
+    st.dataframe(
+        df[['cb_code', 'cb_name', 'industry', 'premium_rate', 'bond_type', 'score', '信号']] if enable_signals
+        else df[['cb_code', 'cb_name', 'industry', 'premium_rate', 'bond_type', 'score']],
+        column_config={
+            "cb_code": st.column_config.TextColumn("代码", width="short"),
+            "cb_name": st.column_config.TextColumn("名称", width="medium"),
+            "industry": st.column_config.TextColumn("行业", width="medium"),
+            "premium_rate": st.column_config.NumberColumn("溢价率", format="%.1f"),
+            "bond_type": st.column_config.TextColumn("类型", width="short"),
+            "score": st.column_config.NumberColumn("评分", format="%.1f"),
+            "信号": st.column_config.TextColumn("信号", width="short")
+        },
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 def render_convertible_overview_page(cb_technical_analyzer):
