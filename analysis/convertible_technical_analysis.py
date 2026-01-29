@@ -279,35 +279,8 @@ class ConvertibleBondTechnicalAnalyzer:
             AI分析文本，如果分析失败则返回None
         """
         try:
-            # 构建数据摘要
-            data_summary = self._format_technical_data(technical_data)
-
             # 构建提示词
-            # 注意：build_convertible_technical_prompt方法将在Task 10中实现
-            # 这里使用placeholder或直接构建简单提示词
-            prompt = f"""请分析以下可转债的技术面：
-
-可转债代码：{technical_data.cb_code}
-可转债名称：{technical_data.cb_name}
-
-{data_summary}
-
-请从以下方面进行分析：
-1. 价格走势和技术指标分析
-2. 成交量和资金流向
-3. 技术形态和支撑/阻力位
-4. 交易信号和操作建议
-
-请按以下格式输出：
-## 技术面分析
-[详细分析内容]
-
-**交易信号**：信号1, 信号2, 信号3
-
-**建议**：[买入/持有/卖出/观望]
-
-**摘要**：[简短总结]
-"""
+            prompt = self.prompt_builder.build_convertible_technical_prompt(technical_data)
 
             logger.info("调用AI进行技术分析...")
             analysis = self.agent.chat(prompt)
@@ -551,37 +524,15 @@ class ConvertibleBondTechnicalAnalyzer:
             conversion_distance = (stock_price / conversion_price - 1) * 100 if conversion_price > 0 else 0
 
             # 4. 构建AI分析提示词
-            # 注意：build_convertible_terms_prompt 将在任务 10 中实现
-            # 这里先使用简单的提示词
-            prompt = f"""请分析以下可转债的条款博弈情况：
-
-【转债信息】
-{detail.get('cb_name', '')} ({cb_code})
-
-【正股信息】
-{stock_name}
-当前股价：{stock_price}元
-
-【条款触发分析】
-强赎条款：
-  - 触发价：{call_price}元
-  - 当前距离：{call_distance:.2f}%
-  - 状态：{'已触发' if stock_price >= call_price else '未触发'}
-
-回售条款：
-  - 触发价：{put_price}元
-  - 当前距离：{put_distance:.2f}%
-  - 状态：{'已触发' if stock_price <= put_price else '未触发'}
-
-下修条款：
-  - 转股价：{conversion_price}元
-  - 当前距离转股价：{conversion_distance:.2f}%
-
-请分析：
-1. 各条款的触发可能性和时间窗口
-2. 发行人可能的应对策略（强赎、下修、不行使权利）
-3. 投资者的应对策略和风险收益分析
-4. 给出具体的操作建议"""
+            prompt = self.prompt_builder.build_convertible_terms_prompt(
+                cb_code=cb_code,
+                cb_name=detail.get('cb_name', ''),
+                stock_price=stock_price,
+                stock_name=stock_name,
+                call_trigger_price=call_price,
+                put_trigger_price=put_price,
+                conversion_price=conversion_price
+            )
 
             # 5. AI分析
             analysis = self.agent.chat(prompt)

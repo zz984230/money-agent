@@ -99,3 +99,68 @@ def test_format_criteria():
     assert "30" in formatted
     assert "15" in formatted
     assert "2.5" in formatted
+
+
+class TestConvertibleTechnicalPrompts:
+    """测试可转债技术面提示词"""
+
+    @pytest.fixture
+    def builder(self):
+        return PromptBuilder()
+
+    def test_build_convertible_technical_prompt(self, builder):
+        """测试技术面分析提示词"""
+        from analysis.convertible_technical_analysis import ConvertibleTechnicalData
+
+        tech_data = ConvertibleTechnicalData(
+            cb_code="113527",
+            cb_name="利民转债",
+            price=105.5,
+            change_percent=1.2,
+            volume=1000000,
+            amount=105500000,
+            conversion_price=20.5,
+            conversion_value=102.0,
+            premium_rate=15.5,
+            bond_rating="AA",
+            pure_bond_value=95.0,
+            ytm=-2.5,
+            call_trigger_price=130.0,
+            put_trigger_price=90.0,
+            conversion_trigger_price=20.5,
+            bid_price=[],
+            ask_price=[],
+            bid_volume=[],
+            ask_volume=[],
+            ma5=104.5,
+            ma20=103.0,
+            volatility_20d=2.5,
+        )
+
+        prompt = builder.build_convertible_technical_prompt(tech_data)
+
+        assert '113527' in prompt
+        assert '利民转债' in prompt
+        assert '105.5' in prompt
+        assert '技术分析师' in prompt
+        assert '定位判断' in prompt
+        assert '估值分析' in prompt
+        assert '投资建议' in prompt
+
+    def test_build_convertible_terms_prompt(self, builder):
+        """测试条款博弈提示词"""
+        prompt = builder.build_convertible_terms_prompt(
+            cb_code="113527",
+            cb_name="利民转债",
+            stock_price=125.0,
+            stock_name="利民股份",
+            call_trigger_price=130.0,
+            put_trigger_price=90.0,
+            conversion_price=100.0,
+        )
+
+        assert '113527' in prompt
+        assert '125.0' in prompt
+        assert '强赎' in prompt
+        assert '回售' in prompt
+        assert '下修' in prompt

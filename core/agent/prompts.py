@@ -226,3 +226,122 @@ ETF名称：{etf_name}
 请提供详细的可转债分析报告。"""
 
         return prompt
+
+    def build_convertible_technical_prompt(
+        self,
+        technical_data: 'ConvertibleTechnicalData'
+    ) -> str:
+        """
+        构建可转债技术面分析提示词
+
+        Args:
+            technical_data: ConvertibleTechnicalData 对象
+
+        Returns:
+            构建好的技术面分析提示词
+        """
+        prompt = f"""你是一位专业的可转债技术分析师。请分析以下可转债的技术面情况：
+
+【基础信息】
+代码：{technical_data.cb_code}
+名称：{technical_data.cb_name}
+现价：{technical_data.price}元
+涨跌幅：{technical_data.change_percent}%
+成交量：{technical_data.volume}手
+
+【转股数据】
+转股价：{technical_data.conversion_price}元
+转股价值：{technical_data.conversion_value}元
+转股溢价率：{technical_data.premium_rate}%
+
+【债券属性】
+债券评级：{technical_data.bond_rating}
+纯债价值：{technical_data.pure_bond_value}元
+到期收益率：{technical_data.ytm}%
+
+【条款信息】
+强赎触发价：{technical_data.call_trigger_price}元
+回售触发价：{technical_data.put_trigger_price}元
+
+【技术指标】
+5日均线：{technical_data.ma5}元
+20日均线：{technical_data.ma20}元
+20日波动率：{technical_data.volatility_20d}%
+
+请从以下几个维度进行分析：
+
+1. **定位判断**：判断该转债属于偏股型、平衡型还是偏债型，并说明理由
+2. **估值分析**：结合绝对价格、溢价率、YTM评估估值水平
+3. **动能分析**：分析价格趋势、成交量变化、波动率情况
+4. **条款博弈**：分析强赎、回售、下修条款的触发距离和博弈空间
+5. **流动性分析**：根据成交量评估流动性
+6. **投资建议**：综合以上分析，给出买入/持有/卖出建议及核心逻辑
+
+请用简洁专业的语言进行分析，重点关注投资价值和风险点。"""
+
+        return prompt
+
+    def build_convertible_terms_prompt(
+        self,
+        cb_code: str,
+        cb_name: str,
+        stock_price: float,
+        stock_name: str,
+        call_trigger_price: float,
+        put_trigger_price: float,
+        conversion_price: float
+    ) -> str:
+        """
+        构建条款博弈分析提示词
+
+        Args:
+            cb_code: 可转债代码
+            cb_name: 可转债名称
+            stock_price: 正股当前价格
+            stock_name: 正股名称
+            call_trigger_price: 强赎触发价
+            put_trigger_price: 回售触发价
+            conversion_price: 转股价
+
+        Returns:
+            构建好的条款博弈分析提示词
+        """
+        # 计算距离各条款触发价的位置
+        call_distance = (stock_price / call_trigger_price - 1) * 100 if call_trigger_price > 0 else 0
+        put_distance = (stock_price / put_trigger_price - 1) * 100 if put_trigger_price > 0 else 0
+        conversion_distance = (stock_price / conversion_price - 1) * 100 if conversion_price > 0 else 0
+
+        call_status = "已触发" if stock_price >= call_trigger_price else "未触发"
+        put_status = "已触发" if stock_price <= put_trigger_price else "未触发"
+
+        prompt = f"""请分析以下可转债的条款博弈情况：
+
+【转债信息】
+{cb_name} ({cb_code})
+
+【正股信息】
+{stock_name}
+当前股价：{stock_price}元
+
+【条款触发分析】
+强赎条款：
+  - 触发价：{call_trigger_price}元
+  - 当前距离：{call_distance:.2f}%
+  - 状态：{call_status}
+
+回售条款：
+  - 触发价：{put_trigger_price}元
+  - 当前距离：{put_distance:.2f}%
+  - 状态：{put_status}
+
+下修条款：
+  - 转股价：{conversion_price}元
+  - 当前距离转股价：{conversion_distance:.2f}%
+
+请分析：
+1. 各条款的触发可能性和时间窗口
+2. 发行人可能的应对策略（强赎、下修、不行使权利）
+3. 投资者的应对策略和风险收益分析
+4. 给出具体的操作建议"""
+
+        return prompt
