@@ -140,3 +140,38 @@ def test_calculate_technical_factors():
     if len(rsi_values) > 0:
         assert rsi_values.max() <= 100
         assert rsi_values.min() >= 0
+
+
+def test_calculate_all_factors():
+    """测试所有因子计算"""
+    analyzer = PredictiveFactorAnalyzer()
+
+    dates = pd.date_range('2024-01-01', periods=100, freq='D')
+    np.random.seed(42)
+    df = pd.DataFrame({
+        'close': [100 + i * 0.1 + np.random.randn() * 2 for i in range(100)],
+        'high': [102 + i * 0.1 + np.random.randn() * 2 for i in range(100)],
+        'low': [98 + i * 0.1 + np.random.randn() * 2 for i in range(100)],
+        'volume': [1000000 + np.random.randn() * 100000 for i in range(100)]
+    }, index=dates)
+
+    factors = analyzer.calculate_all_factors(df)
+
+    # 检查是否有因子
+    assert len(factors.columns) > 0
+
+    # 检查一些关键因子
+    assert 'momentum_5' in factors.columns
+    assert 'spread_pct' in factors.columns
+    assert 'price_trend' in factors.columns
+    assert 'vol_clustering' in factors.columns
+
+
+def test_predictive_factor_analyzer_initialization():
+    """测试PredictiveFactorAnalyzer初始化"""
+    analyzer = PredictiveFactorAnalyzer()
+    assert analyzer.factors == {}
+    assert hasattr(analyzer, 'calculate_technical_factors')
+    assert hasattr(analyzer, 'calculate_liquidity_factors')
+    assert hasattr(analyzer, 'calculate_commodity_specific_factors')
+    assert hasattr(analyzer, 'calculate_all_factors')

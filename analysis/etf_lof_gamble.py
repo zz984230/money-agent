@@ -191,3 +191,74 @@ class PredictiveFactorAnalyzer:
             factors['pv_divergence'] = price_change
 
         return factors
+
+    def calculate_liquidity_factors(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        计算流动性因子
+
+        Args:
+            df: DataFrame，必须包含 close, high, low, volume 列
+
+        Returns:
+            因子DataFrame
+        """
+        factors = pd.DataFrame(index=df.index)
+
+        # 价差指标
+        factors['spread_pct'] = (df['high'] - df['low']) / df['close']
+
+        # 流动性冲击
+        daily_return = df['close'].pct_change()
+        if 'volume' in df.columns:
+            factors['liquidity_impact'] = daily_return.abs() / (df['volume'] + 1e-6)
+        else:
+            factors['liquidity_impact'] = daily_return.abs()
+
+        return factors
+
+    def calculate_commodity_specific_factors(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        计算大宗商品特有因子
+
+        Args:
+            df: DataFrame，必须包含 close 列
+
+        Returns:
+            因子DataFrame
+        """
+        factors = pd.DataFrame(index=df.index)
+
+        # 价格趋势
+        def trend_func(x):
+            if len(x) < 2:
+                return 0
+            return 1 if x.iloc[-1] > x.iloc[0] else -1
+
+        factors['price_trend'] = df['close'].rolling(20).apply(trend_func)
+
+        # 波动聚集性
+        returns = df['close'].pct_change()
+        volatility_5 = returns.rolling(5).std()
+        volatility_20 = returns.rolling(20).std()
+        factors['vol_clustering'] = volatility_5 / (volatility_20 + 1e-6)
+
+        return factors
+
+    def calculate_all_factors(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        计算所有因子
+
+        Args:
+            df: 历史数据DataFrame
+
+        Returns:
+            合并后的因子DataFrame
+        """
+        tech_factors = self.calculate_technical_factors(df)
+        liq_factors = self.calculate_liquidity_factors(df)
+        commodity_factors = self.calculate_commodity_specific_factors(df)
+
+        # 合并所有因子
+        all_factors = pd.concat([tech_factors, liq_factors, commodity_factors], axis=1)
+
+        return all_factors
