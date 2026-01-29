@@ -346,3 +346,64 @@ class TestAKShareFetcherConvertible:
 
         result = fetcher.get_convertible_name_by_code('999999')
         assert result is None
+
+
+class TestAKShareFetcherIndustryData:
+    """测试行业数据获取功能"""
+
+    @pytest.fixture
+    def fetcher(self):
+        return AKShareFetcher()
+
+    @patch('akshare.stock_board_industry_hist_em')
+    def test_get_industry_index_hist(self, mock_industry_hist, fetcher):
+        """测试获取行业指数历史数据"""
+        # Mock返回数据
+        mock_data = pd.DataFrame({
+            '日期': pd.date_range('2024-01-01', periods=60),
+            '收盘': [100.0 + i for i in range(60)],
+        })
+        mock_industry_hist.return_value = mock_data
+
+        df = fetcher.get_industry_index_hist("new_energy", days=60)
+
+        assert df is not None
+        assert not df.empty
+        assert 'close' in df.columns
+        assert len(df) <= 60  # 不应超过请求的天数
+        mock_industry_hist.assert_called_once()
+
+    @patch('akshare.stock_zh_index_daily')
+    def test_get_benchmark_index_hist(self, mock_index_daily, fetcher):
+        """测试获取基准指数历史数据"""
+        # Mock返回数据
+        mock_data = pd.DataFrame({
+            '日期': pd.date_range('2024-01-01', periods=60),
+            '收盘': [3000.0 + i for i in range(60)],
+        })
+        mock_index_daily.return_value = mock_data
+
+        df = fetcher.get_benchmark_index_hist("000300", days=60)
+
+        assert df is not None
+        assert not df.empty
+        assert 'close' in df.columns
+        mock_index_daily.assert_called_once()
+
+    @patch('akshare.stock_board_industry_name_em')
+    def test_get_industry_list(self, mock_industry_list, fetcher):
+        """测试获取行业列表"""
+        # Mock返回数据
+        mock_data = pd.DataFrame({
+            '板块代码': ['BK0001', 'BK0002', 'BK0003'],
+            '板块名称': ['电子', '化工', '机械设备'],
+        })
+        mock_industry_list.return_value = mock_data
+
+        industries = fetcher.get_industry_list()
+
+        assert industries is not None
+        assert len(industries) > 0
+        assert isinstance(industries[0], dict)
+        assert 'industry_code' in industries[0] or 'name' in industries[0]
+        mock_industry_list.assert_called_once()

@@ -470,6 +470,129 @@ class AKShareFetcher:
             logger.error(f"获取可转债 {cb_code} 历史数据失败: {e}", exc_info=True)
             return None
 
+    def get_industry_index_hist(
+        self,
+        industry_symbol: str,
+        days: int = 60
+    ) -> Optional[pd.DataFrame]:
+        """
+        获取行业指数历史数据
+
+        Args:
+            industry_symbol: 行业指数代码（如 "new_energy" 对应新能源）
+            days: 获取最近N天数据
+
+        Returns:
+            包含行业指数历史数据的DataFrame，包含 close 列用于计算涨跌幅
+        """
+        try:
+            logger.debug(f"开始获取行业指数 {industry_symbol} 的历史数据（最近{days}天）")
+
+            # 使用东方财富行业指数接口
+            # industry_symbol 是行业名称的英文标识，需要转换为实际接口参数
+            df = ak.stock_board_industry_hist_em(
+                symbol=industry_symbol,
+                period="daily",
+                adjust=""  # 不复权
+            )
+
+            if df is None or df.empty:
+                logger.warning(f"获取行业指数 {industry_symbol} 历史数据失败：返回数据为空")
+                return pd.DataFrame()
+
+            # 处理列名映射
+            df = self._process_daily_data(df)
+
+            # 筛选最近N天
+            if 'date' in df.columns:
+                df = df.sort_values('date').tail(days)
+
+            logger.debug(f"成功获取行业指数 {industry_symbol} 的历史数据，共{len(df)}条记录")
+            return df
+
+        except Exception as e:
+            logger.error(f"获取行业指数 {industry_symbol} 历史数据失败: {e}", exc_info=True)
+            return pd.DataFrame()
+
+    def get_benchmark_index_hist(
+        self,
+        index_code: str = "000300",
+        days: int = 60
+    ) -> Optional[pd.DataFrame]:
+        """
+        获取基准指数历史数据（默认沪深300）
+
+        Args:
+            index_code: 指数代码（默认沪深300 000300）
+            days: 获取最近N天数据
+
+        Returns:
+            包含基准指数历史数据的DataFrame
+        """
+        try:
+            logger.debug(f"开始获取基准指数 {index_code} 的历史数据（最近{days}天）")
+
+            # 确定市场前缀
+            if index_code.startswith('00'):
+                symbol = f"sh{index_code}"
+            elif index_code.startswith('30') or index_code.startswith('39'):
+                symbol = f"sz{index_code}"
+            else:
+                symbol = f"sh{index_code}"
+
+            df = ak.stock_zh_index_daily(symbol=symbol)
+
+            if df is None or df.empty:
+                logger.warning(f"获取基准指数 {index_code} 历史数据失败：返回数据为空")
+                return pd.DataFrame()
+
+            # 处理列名
+            df = self._process_daily_data(df)
+
+            # 筛选最近N天
+            if 'date' in df.columns:
+                df = df.sort_values('date').tail(days)
+
+            logger.debug(f"成功获取基准指数 {index_code} 的历史数据，共{len(df)}条记录")
+            return df
+
+        except Exception as e:
+            logger.error(f"获取基准指数 {index_code} 历史数据失败: {e}", exc_info=True)
+            return pd.DataFrame()
+
+    def get_industry_list(self) -> List[Dict]:
+        """
+        获取所有行业列表
+
+        Returns:
+            行业列表，每个元素为包含 industry_code 和 name 的字典
+        """
+        try:
+            logger.debug("开始获取行业列表")
+
+            # 获取东方财富行业板块信息
+            df = ak.stock_board_industry_name_em()
+
+            if df is None or df.empty:
+                logger.warning("获取行业列表失败：返回数据为空")
+                return []
+
+            # 转换为字典列表
+            result = []
+            for _, row in df.iterrows():
+                # 使用板块代码作为 industry_code
+                result.append({
+                    'industry_code': str(row.get('板块代码', '')),
+                    'name': str(row.get('板块名称', '')),
+                })
+
+            logger.info(f"获取行业列表成功，共 {len(result)} 个行业")
+            return result
+
+        except Exception as e:
+            logger.error(f"获取行业列表失败: {e}", exc_info=True)
+            return []
+
     def calculate_indicators(
         self,
         history_df: pd.DataFrame
