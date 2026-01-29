@@ -11,7 +11,7 @@ import logging
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -345,3 +345,130 @@ class PredictiveFactorAnalyzer:
         except Exception as e:
             logger.error(f"构建预测模型失败: {e}")
             return None, None
+
+
+@dataclass
+class GambleAnalysisResult:
+    """ETF/LOF投机分析结果"""
+    symbol: str
+    name: str
+    fund_type: str
+
+    # 异常波动数据
+    abnormal_events_count: int
+    abnormal_events: List[Dict] = field(default_factory=list)
+
+    # 因子数据
+    current_factors: Dict = field(default_factory=dict)
+    feature_importance: Optional[pd.DataFrame] = None
+
+    # AI分析
+    ai_summary: str = ""
+    timing_advice: str = ""
+    action_advice: str = ""
+
+    # 具体操作
+    entry_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[List[float]] = None
+    position_size: Optional[str] = None
+    hold_period: Optional[str] = None
+
+
+class LOFETFGambleAnalyzer:
+    """ETF/LOF投机主分析器"""
+
+    def __init__(self, agent):
+        """
+        初始化分析器
+
+        Args:
+            agent: AI Agent实例
+        """
+        self.agent = agent
+        from data.fetchers.akshare_fetcher import AKShareFetcher
+        self.fetcher = AKShareFetcher()
+        self.detector = VolatilityDetector()
+        self.factor_analyzer = PredictiveFactorAnalyzer()
+
+    def analyze_single(self, symbol: str, name: str, fund_type: str = "LOF") -> Optional[GambleAnalysisResult]:
+        """
+        分析单个LOF/ETF
+
+        Args:
+            symbol: 基金代码
+            name: 基金名称
+            fund_type: 基金类型
+
+        Returns:
+            GambleAnalysisResult 或 None
+        """
+        logger.info(f"开始分析 {name} ({symbol})")
+
+        # 1. 获取历史数据
+        df = self.fetcher.get_lof_etf_history(symbol, period=365)
+        if df is None or len(df) < 100:
+            logger.warning(f"{symbol} 数据不足，跳过")
+            return None
+
+        # 2. 检测异常波动
+        abnormal_dates, abnormal_info = self.detector.detect_sudden_moves(
+            df['close'], window=3, threshold=0.15
+        )
+
+        if len(abnormal_info) == 0:
+            logger.info(f"{symbol} 未发现异常波动事件")
+            return None
+
+        logger.info(f"{symbol} 发现 {len(abnormal_info)} 个异常波动事件")
+
+        # 3. 计算所有因子
+        all_factors = self.factor_analyzer.calculate_all_factors(df)
+
+        # 4. 构建预测模型
+        model, feature_importance = self.factor_analyzer.build_prediction_model(
+            all_factors, abnormal_dates
+        )
+
+        if feature_importance is None:
+            logger.warning(f"{symbol} 无法构建预测模型")
+            feature_importance = pd.DataFrame(columns=['feature', 'importance'])
+
+        # 5. 准备当前数据
+        current_factors = all_factors.iloc[-1].dropna().to_dict()
+
+        current_data = {
+            'price': df['close'].iloc[-1],
+            'change_pct': df['close'].pct_change().iloc[-1] * 100 if len(df) > 1 else 0,
+            'volume': df['volume'].iloc[-1] if 'volume' in df.columns else 0,
+            'volatility_20d': df['close'].pct_change().rolling(20).std().iloc[-1] if len(df) >= 20 else None
+        }
+
+        # 6. AI分析
+        try:
+            from core.agent.prompts import PromptBuilder
+
+            prompt = PromptBuilder.build_etf_lof_gamble_prompt(
+                symbol, name, fund_type, abnormal_info,
+                current_factors, feature_importance, current_data
+            )
+
+            ai_response = self.agent.chat(prompt)
+
+        except Exception as e:
+            logger.error(f"AI分析失败: {e}")
+            ai_response = f"AI分析失败: {str(e)}"
+
+        # 7. 构建结果
+        result = GambleAnalysisResult(
+            symbol=symbol,
+            name=name,
+            fund_type=fund_type,
+            abnormal_events_count=len(abnormal_info),
+            abnormal_events=abnormal_info,
+            current_factors=current_factors,
+            feature_importance=feature_importance,
+            ai_summary=ai_response
+        )
+
+        return result

@@ -4,7 +4,13 @@ ETF/LOF投机异常波动分析模块测试
 import pytest
 import pandas as pd
 import numpy as np
-from analysis.etf_lof_gamble import VolatilityDetector, AbnormalEvent, PredictiveFactorAnalyzer
+from analysis.etf_lof_gamble import (
+    VolatilityDetector,
+    AbnormalEvent,
+    PredictiveFactorAnalyzer,
+    LOFETFGambleAnalyzer,
+    GambleAnalysisResult
+)
 
 
 def test_detect_sudden_moves_no_abnormal():
@@ -218,3 +224,92 @@ def test_build_prediction_model_no_events():
 
     assert model is None
     assert importance is None
+
+
+def test_gamble_analysis_result_dataclass():
+    """测试GambleAnalysisResult数据类"""
+    result = GambleAnalysisResult(
+        symbol="163415",
+        name="白银LOF",
+        fund_type="LOF",
+        abnormal_events_count=5,
+        abnormal_events=[],
+        current_factors={'momentum_5': 0.05},
+        feature_importance=None,
+        ai_summary="测试AI分析"
+    )
+
+    assert result.symbol == "163415"
+    assert result.name == "白银LOF"
+    assert result.abnormal_events_count == 5
+    assert result.ai_summary == "测试AI分析"
+
+
+@pytest.mark.integration
+def test_analyze_single_with_mock_agent():
+    """测试单个标的分析（使用Mock Agent）"""
+    from unittest.mock import Mock
+    from core.agent.base_agent import BaseAgent
+
+    # 创建Mock Agent
+    mock_agent = Mock(spec=BaseAgent)
+    mock_agent.chat = Mock(return_value="""
+### 1. 因子解读
+当前动量因子显示上升趋势...
+
+### 2. 历史规律
+该标的异常波动通常持续2-3天...
+
+### 3. 时机判断
+⏸️ **观望** - 信号不明确，建议继续观察
+
+### 4. 操作建议
+暂不建议买入，建议关注成交量和波动率变化...
+
+### 5. 风险提示
+主要风险在于...
+    """)
+
+    analyzer = LOFETFGambleAnalyzer(mock_agent)
+
+    # 使用一个真实的LOF代码进行测试
+    result = analyzer.analyze_single("163415", "白银LOF", "LOF")
+
+    if result is not None:
+        assert result.symbol == "163415"
+        assert result.name == "白银LOF"
+        assert result.abnormal_events_count >= 0
+        assert result.ai_summary != ""
+    else:
+        pytest.skip("无法获取测试数据或无异常事件")
+
+
+def test_analyze_single_with_insufficient_data():
+    """测试数据不足的情况"""
+    from unittest.mock import Mock
+    from core.agent.base_agent import BaseAgent
+
+    mock_agent = Mock(spec=BaseAgent)
+    analyzer = LOFETFGambleAnalyzer(mock_agent)
+
+    # Mock fetcher返回不足数据
+    analyzer.fetcher.get_lof_etf_history = Mock(return_value=None)
+
+    result = analyzer.analyze_single("000000", "Test", "LOF")
+
+    assert result is None
+
+
+def test_lof_etf_gamble_analyzer_initialization():
+    """测试LOFETFGambleAnalyzer初始化"""
+    from unittest.mock import Mock
+    from core.agent.base_agent import BaseAgent
+
+    mock_agent = Mock(spec=BaseAgent)
+    analyzer = LOFETFGambleAnalyzer(mock_agent)
+
+    assert analyzer.agent == mock_agent
+    assert hasattr(analyzer, 'fetcher')
+    assert hasattr(analyzer, 'detector')
+    assert hasattr(analyzer, 'factor_analyzer')
+    assert hasattr(analyzer, 'analyze_single')
