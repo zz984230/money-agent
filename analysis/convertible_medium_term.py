@@ -73,7 +73,10 @@ class ConvertibleBondMediumTermAnalyzer:
             # 3. 计算每个行业的因子
             industry_results = []
 
-            for industry in industries[:30]:  # 限制处理数量避免超时
+            # 限制处理行业数量以提高响应速度
+            max_industries = min(15, len(industries))
+
+            for idx, industry in enumerate(industries[:max_industries]):
                 industry_code = industry.get('industry_code', '')
                 industry_name = industry.get('name', '')
 
@@ -81,6 +84,8 @@ class ConvertibleBondMediumTermAnalyzer:
                     continue
 
                 try:
+                    logger.info(f"正在处理行业 {idx+1}/{max_industries}: {industry_name}")
+
                     # 获取行业指数数据
                     industry_df = self.fetcher.get_industry_index_hist(
                         f"_{industry_code}",
