@@ -86,26 +86,157 @@ class AKShareFetcher:
 
     def get_convertible_list(self) -> List[Dict]:
         """获取可转债列表"""
-        cb_list = ak.bond_cb_jsl()
-        return cb_list.to_dict('records')
+        try:
+            # 使用新浪财经-沪深可转债实时行情数据接口，返回所有沪深可转债
+            df = ak.bond_zh_hs_cov_spot()
+
+            if df is None or df.empty:
+                logger.warning("获取可转债列表为空")
+                return []
+
+            # 重命名列为统一格式
+            result = []
+            for _, row in df.iterrows():
+                # 从 symbol 字段提取纯数字代码（去掉 sh/sz 前缀）
+                symbol = str(row.get('symbol', ''))
+                code = symbol.replace('sh', '').replace('sz', '') if symbol else ''
+
+                result.append({
+                    '代码': code,
+                    '转债名称': str(row.get('name', '')),
+                    '现价': float(row.get('trade', 0)) if pd.notna(row.get('trade')) else 0.0,
+                    '涨跌幅': float(row.get('pricechange', 0)) if pd.notna(row.get('pricechange')) else 0.0,
+                    '正股代码': '',
+                    '正股名称': '',
+                    '转股价': 0.0,
+                    '转股价值': 0.0,
+                    '转股溢价率': 0.0,
+                    '回售触发价': 0.0,
+                    '强赎触发价': 0.0,
+                    '成交额': float(row.get('amount', 0)) if pd.notna(row.get('amount')) else 0.0,
+                })
+
+            logger.info(f"获取可转债列表成功，共 {len(result)} 只")
+            return result
+
+        except Exception as e:
+            logger.error(f"获取可转债列表失败: {e}", exc_info=True)
+            return []
+
+    def get_convertible_by_name(self, cb_name: str) -> Optional[str]:
+        """
+        根据可转债名称查找可转债代码
+
+        Args:
+            cb_name: 可转债名称（支持模糊匹配）
+
+        Returns:
+            可转债代码（6位数字），如果未找到返回None
+        """
+        try:
+            cb_list = self.get_convertible_list()
+
+            if not cb_list:
+                logger.warning("获取可转债列表为空")
+                return None
+
+            # 精确匹配（使用中文字段名）
+            for cb in cb_list:
+                if cb.get('转债名称') == cb_name:
+                    return cb.get('代码')
+
+            # 模糊匹配
+            for cb in cb_list:
+                name = cb.get('转债名称', '')
+                if cb_name in name:
+                    logger.info(f"模糊匹配: '{cb_name}' -> '{name}' ({cb.get('代码')})")
+                    return cb.get('代码')
+
+            logger.warning(f"未找到可转债: {cb_name}")
+            return None
+
+        except Exception as e:
+            logger.error(f"根据名称查找可转债失败: {e}", exc_info=True)
+            return None
+
+    def get_convertible_name_by_code(self, cb_code: str) -> Optional[str]:
+        """
+        根据可转债代码查找可转债名称
+
+        Args:
+            cb_code: 可转债代码（6位数字）
+
+        Returns:
+            可转债名称，如果未找到返回None
+        """
+        try:
+            cb_list = self.get_convertible_list()
+
+            if not cb_list:
+                logger.warning("获取可转债列表为空")
+                return None
+
+            # 精确匹配（使用中文字段名）
+            for cb in cb_list:
+                if cb.get('代码') == cb_code:
+                    return cb.get('转债名称')
+
+            logger.warning(f"未找到可转债代码: {cb_code}")
+            return None
+
+        except Exception as e:
+            logger.error(f"根据代码查找可转债名称失败: {e}", exc_info=True)
+            return None
 
     def get_convertible_daily(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         """获取可转债日线数据
 
         Args:
             symbol: 可转债代码
-            start_date: 开始日期，格式：YYYY-MM-DD
-            end_date: 结束日期，格式：YYYY-MM-DD
+            start_date: 开始日期，格式：YYYYMMDD
+            end_date: 结束日期，格式：YYYYMMDD
 
         Returns:
             DataFrame: 包含可转债日线数据的DataFrame
         """
-        # akshare的可转债函数不支持start_date和end_date参数
-        df = ak.bond_zh_hs_cov_daily(symbol=symbol)
-        # 筛选日期范围
-        if 'date' in df.columns:
-            df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
-        return self._process_daily_data(df)
+        try:
+            # bond_zh_hs_cov_daily 需要带市场前缀的完整代码
+            # 深市代码以 0, 1, 2, 3 开头，使用 sz 前缀
+            # 沪市代码以 6, 11 开头，使用 sh 前缀
+            original_symbol = symbol
+            if not symbol.startswith(('sz', 'sh')):
+                if symbol.startswith(('0', '1', '2', '3')):
+                    symbol = 'sz' + symbol
+                elif symbol.startswith(('6', '11')):
+                    symbol = 'sh' + symbol
+                else:
+                    # 默认使用深市
+                    symbol = 'sz' + symbol
+
+            # akshare的可转债函数不支持start_date和end_date参数
+            df = ak.bond_zh_hs_cov_daily(symbol=symbol)
+
+            if df is None or df.empty:
+                logger.debug(f"可转债 {original_symbol} 历史数据为空")
+                return pd.DataFrame()
+
+            # 将日期字符串转换为 YYYY-MM-DD 格式以便比较
+            start_date_formatted = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
+            end_date_formatted = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+
+            # 先筛选日期范围（在date列还是字符串的时候）
+            if 'date' in df.columns:
+                # 将 date 列转为字符串格式进行比较
+                df['date_str'] = df['date'].astype(str)
+                df = df[(df['date_str'] >= start_date_formatted) & (df['date_str'] <= end_date_formatted)]
+                df = df.drop(columns=['date_str'])
+
+            # 再进行数据处理（转换日期为datetime）
+            return self._process_daily_data(df)
+
+        except Exception as e:
+            logger.error(f"获取可转债 {original_symbol} 历史数据失败: {e}")
+            return pd.DataFrame()
 
     def get_stock_info(self, symbol: str) -> Dict:
         """获取股票基本信息
@@ -198,19 +329,15 @@ class AKShareFetcher:
             包含条款、评级等信息的字典，如果获取失败返回None
         """
         try:
-            import akshare as ak
-
-            logger.debug(f"开始获取可转债 {cb_code} 的详细信息")
-
-            # 获取可转债列表
-            df = ak.bond_cb_jsl()
+            # 使用 bond_zh_cov 接口获取详细信息（更稳定）
+            df = ak.bond_zh_cov()
 
             if df is None or df.empty:
-                logger.warning("获取可转债列表失败：返回数据为空")
+                logger.warning("获取可转债数据一览表失败")
                 return None
 
             # 查找对应代码的可转债
-            matching = df[df.iloc[:, 0].astype(str) == cb_code]
+            matching = df[df['债券代码'] == cb_code]
 
             if matching.empty:
                 logger.warning(f"未找到可转债 {cb_code}")
@@ -219,22 +346,20 @@ class AKShareFetcher:
             # 提取第一行数据
             row = matching.iloc[0]
 
-            # 构建返回字典（使用位置索引访问列）
+            # 构建返回字典
             result = {
                 "cb_code": cb_code,
-                "cb_name": str(row.iloc[1]) if len(row) > 1 else "",
-                "price": float(row.iloc[2]) if len(row) > 2 else 0.0,
-                "stock_code": str(row.iloc[4]) if len(row) > 4 else "",
-                "stock_name": str(row.iloc[5]) if len(row) > 5 else "",
+                "cb_name": str(row.get('债券简称', '')),
+                "conversion_price": float(row.get('转股价', 0)) if pd.notna(row.get('转股价')) else 0.0,
+                "conversion_value": float(row.get('转股价值', 0)) if pd.notna(row.get('转股价值')) else 0.0,
+                "premium_rate": float(row.get('转股溢价率', 0)) if pd.notna(row.get('转股溢价率')) else 0.0,
+                "stock_code": str(row.get('正股代码', '')),
+                "stock_name": str(row.get('正股简称', '')),
+                "stock_price": float(row.get('正股价', 0)) if pd.notna(row.get('正股价')) else 0.0,
             }
 
-            # 添加条款信息（如果存在）
-            if len(row) > 13 and row.iloc[13] is not None:
-                result["put_trigger_price"] = float(row.iloc[13])
-            if len(row) > 14 and row.iloc[14] is not None:
-                result["call_trigger_price"] = float(row.iloc[14])
-            if len(row) > 9 and row.iloc[9] is not None:
-                result["conversion_price"] = float(row.iloc[9])
+            # 注意：bond_zh_cov 返回的是发行数据，转股价值和溢价值可能不是实时数据
+            # 如果需要实时数据，应该根据实时价格重新计算
 
             logger.debug(f"成功获取可转债 {cb_code} 的详细信息")
             return result

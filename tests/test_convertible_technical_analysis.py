@@ -185,10 +185,32 @@ class TestConvertibleBondTechnicalAnalyzer:
         result = analyzer.analyze_technical("", "利民转债")
         assert result is None
 
-    def test_analyze_technical_with_empty_name(self, analyzer):
-        """测试空名称的处理"""
+    def test_analyze_technical_with_empty_name(self, analyzer, mock_fetcher):
+        """测试只提供代码时自动查找名称"""
+        # Mock get_convertible_name_by_code 返回名称
+        mock_fetcher.get_convertible_name_by_code = Mock(return_value="利民转债")
+
         result = analyzer.analyze_technical("113527", "")
-        assert result is None
+
+        # 现在会自动查找名称，应该成功分析
+        assert result is not None
+        assert result.technical_data.cb_code == "113527"
+        # 验证调用了查找方法
+        mock_fetcher.get_convertible_name_by_code.assert_called_once_with("113527")
+
+    def test_analyze_technical_by_name_only(self, analyzer, mock_fetcher):
+        """测试只提供名称时自动查找代码"""
+        # Mock get_convertible_by_name 返回代码
+        mock_fetcher.get_convertible_by_name = Mock(return_value="113527")
+
+        result = analyzer.analyze_technical("利民转债")
+
+        # 应该通过名称找到代码并成功分析
+        assert result is not None
+        assert result.technical_data.cb_code == "113527"
+        assert result.technical_data.cb_name == "利民转债"
+        # 验证调用了查找方法
+        mock_fetcher.get_convertible_by_name.assert_called_once_with("利民转债")
 
     def test_analyze_technical_ai_failure(self, analyzer, mock_agent):
         """测试AI分析失败的处理"""

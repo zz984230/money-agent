@@ -718,41 +718,25 @@ def render_convertible_technical_page(cb_technical_analyzer):
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            cb_code = st.text_input(
-                "转债代码",
-                placeholder="如113527",
-                help="输入6位可转债代码",
-                key="technical_cb_code"
+            cb_name = st.text_input(
+                "转债名称",
+                placeholder="如利民转债",
+                help="输入可转债名称，支持模糊匹配",
+                key="technical_cb_name"
             )
 
         with col2:
             st.write("")  # 占位
             analyze_btn = st.button("开始分析", type="primary", key="technical_analyze_btn")
 
-        if analyze_btn and cb_code:
+        if analyze_btn and cb_name:
             with st.spinner("正在分析..."):
                 try:
-                    # 首先获取转债名称
-                    from data.fetchers.akshare_fetcher import AKShareFetcher
-                    fetcher = AKShareFetcher()
-                    cb_list = fetcher.get_convertible_list()
-
-                    cb_name = ""
-                    if cb_list:
-                        for cb in cb_list:
-                            if cb.get('cb_code') == cb_code:
-                                cb_name = cb.get('cb_name', '')
-                                break
-
-                    if not cb_name:
-                        st.error(f"未找到代码为 {cb_code} 的可转债，请检查代码是否正确")
-                        return
-
-                    result = cb_technical_analyzer.analyze_technical(cb_code, cb_name)
+                    result = cb_technical_analyzer.analyze_technical(cb_name)
 
                     if result:
                         # 显示基础信息
-                        st.success(f"分析完成：{result.cb_name}")
+                        st.success(f"分析完成：{result.technical_data.cb_name}")
 
                         # 基础信息卡片
                         col1, col2, col3, col4 = st.columns(4)

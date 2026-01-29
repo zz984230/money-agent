@@ -291,3 +291,58 @@ class TestAKShareFetcherConvertible:
         """测试无效的天数参数"""
         assert fetcher.get_convertible_history('113527', days=0) is None
         assert fetcher.get_convertible_history('113527', days=-1) is None
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_by_name_exact_match(self, mock_bond_jsl, fetcher):
+        """测试通过名称精确查找可转债代码"""
+        mock_bond_jsl.return_value = pd.DataFrame({
+            '代码': ['113527', '113050'],
+            '转债名称': ['利民转债', '南银转债']
+        })
+
+        result = fetcher.get_convertible_by_name('利民转债')
+        assert result == '113527'
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_by_name_fuzzy_match(self, mock_bond_jsl, fetcher):
+        """测试通过名称模糊查找可转债代码"""
+        mock_bond_jsl.return_value = pd.DataFrame({
+            '代码': ['113527', '113050'],
+            '转债名称': ['利民转债', '南银转债']
+        })
+
+        result = fetcher.get_convertible_by_name('利民')
+        assert result == '113527'
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_by_name_not_found(self, mock_bond_jsl, fetcher):
+        """测试查找不存在的可转债名称"""
+        mock_bond_jsl.return_value = pd.DataFrame({
+            '代码': ['113527'],
+            '转债名称': ['利民转债']
+        })
+
+        result = fetcher.get_convertible_by_name('不存在')
+        assert result is None
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_name_by_code(self, mock_bond_jsl, fetcher):
+        """测试通过代码查找可转债名称"""
+        mock_bond_jsl.return_value = pd.DataFrame({
+            '代码': ['113527', '113050'],
+            '转债名称': ['利民转债', '南银转债']
+        })
+
+        result = fetcher.get_convertible_name_by_code('113527')
+        assert result == '利民转债'
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_name_by_code_not_found(self, mock_bond_jsl, fetcher):
+        """测试查找不存在的可转债代码"""
+        mock_bond_jsl.return_value = pd.DataFrame({
+            '代码': ['113527'],
+            '转债名称': ['利民转债']
+        })
+
+        result = fetcher.get_convertible_name_by_code('999999')
+        assert result is None

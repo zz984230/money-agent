@@ -90,31 +90,46 @@ class ConvertibleBondTechnicalAnalyzer:
 
     def analyze_technical(
         self,
-        cb_code: str,
-        cb_name: str
+        cb_input: str,
+        cb_name: Optional[str] = None
     ) -> Optional[TechnicalAnalysisResult]:
         """
         分析可转债技术面
 
         Args:
-            cb_code: 可转债代码
-            cb_name: 可转债名称
+            cb_input: 可转债代码或名称
+            cb_name: 可转债名称（可选，如果cb_input是代码时可省略，将自动查找）
 
         Returns:
             TechnicalAnalysisResult对象，如果分析失败则返回None
         """
         try:
             # 验证参数
-            if not cb_code or not cb_code.strip():
-                logger.warning("可转债代码不能为空")
+            if not cb_input or not cb_input.strip():
+                logger.warning("可转债代码或名称不能为空")
                 return None
 
-            if not cb_name or not cb_name.strip():
-                logger.warning("可转债名称不能为空")
-                return None
+            cb_input = cb_input.strip()
 
-            cb_code = cb_code.strip()
-            cb_name = cb_name.strip()
+            # 判断输入是代码还是名称
+            # 如果是6位数字，视为代码；否则视为名称
+            if re.match(self.CB_CODE_PATTERN, cb_input):
+                cb_code = cb_input
+                # 如果没有提供名称，自动查找
+                if not cb_name or not cb_name.strip():
+                    cb_name = self.fetcher.get_convertible_name_by_code(cb_code)
+                    if not cb_name:
+                        logger.warning(f"未找到代码为 {cb_code} 的可转债")
+                        return None
+                else:
+                    cb_name = cb_name.strip()
+            else:
+                # 通过名称查找代码
+                cb_name = cb_input
+                cb_code = self.fetcher.get_convertible_by_name(cb_name)
+                if not cb_code:
+                    logger.warning(f"未找到可转债: {cb_name}")
+                    return None
 
             logger.info(f"开始技术分析：{cb_code} - {cb_name}")
 
@@ -165,7 +180,55 @@ class ConvertibleBondTechnicalAnalyzer:
             ConvertibleTechnicalData对象
         """
         try:
-            # 获取历史数据用于计算技术指标
+            # 获取详细信息（包含转股价值、溢价值等）
+            detail = self.fetcher.get_convertible_detail(cb_code)
+
+            # 优先获取实时数据
+            realtime_data = self.fetcher.get_convertible_realtime(cb_code)
+
+            # 从实时数据获取最新价格、涨跌幅、成交量等
+            latest_price = 0.0
+            change_percent = 0.0
+            volume = 0.0
+            amount = 0.0
+
+            if realtime_data:
+                latest_price = float(realtime_data.get('price', 0))
+                change_percent = float(realtime_data.get('change_percent', 0))
+                if change_percent == 0 and realtime_data.get('change'):
+                    # 如果没有涨跌幅百分比，尝试用涨跌额计算
+                    change = float(realtime_data.get('change', 0))
+                    if latest_price > 0:
+                        change_percent = (change / (latest_price - change)) * 100 if (latest_price - change) != 0 else 0
+                volume = float(realtime_data.get('volume', 0))
+                amount = float(realtime_data.get('amount', 0))
+
+            # 从详细信息获取转股相关数据
+            conversion_price = 0.0
+            conversion_value = 0.0
+            premium_rate = 0.0
+            pure_bond_value = 0.0
+            call_trigger_price = 0.0
+            put_trigger_price = 0.0
+
+            if detail:
+                conversion_price = float(detail.get('conversion_price', 0))
+                stock_price = float(detail.get('stock_price', 0))
+
+                # 使用 detail 中的转股价值，或者根据正股价计算
+                conversion_value = float(detail.get('conversion_value', 0))
+                if conversion_value == 0 and conversion_price > 0 and stock_price > 0:
+                    conversion_value = (stock_price / conversion_price) * 100
+
+                # 使用 detail 中的溢价值，或者根据实时价格和转股价值计算
+                premium_rate = float(detail.get('premium_rate', 0))
+                if premium_rate == 0 and conversion_value > 0 and latest_price > 0:
+                    premium_rate = (latest_price / conversion_value - 1) * 100
+
+                call_trigger_price = conversion_price * 1.3 if conversion_price > 0 else 0.0
+                put_trigger_price = conversion_price * 0.7 if conversion_price > 0 else 0.0
+
+            # 获取历史数据用于计算技术指标（均线、波动率等）
             end_date = pd.Timestamp.now()
             start_date = end_date - pd.Timedelta(days=self.DEFAULT_HISTORY_DAYS)
 
@@ -179,14 +242,9 @@ class ConvertibleBondTechnicalAnalyzer:
             ma5 = 0.0
             ma20 = 0.0
             volatility_20d = 0.0
-            latest_price = 0.0
-            change_percent = 0.0
-            volume = 0.0
-            amount = 0.0
 
             if history_df is not None and not history_df.empty and 'close' in history_df.columns:
                 closes = history_df['close'].values
-                latest_price = float(closes[-1]) if len(closes) > 0 else 0.0
 
                 # 计算MA5和MA20
                 if len(closes) >= 5:
@@ -200,18 +258,19 @@ class ConvertibleBondTechnicalAnalyzer:
                     if len(returns) > 0:
                         volatility_20d = float(returns.std() * np.sqrt(252) * 100)  # 年化波动率
 
-                # 获取成交量和成交额
-                if 'volume' in history_df.columns:
-                    volume = float(history_df['volume'].iloc[-1]) if len(history_df) > 0 else 0.0
-                if 'amount' in history_df.columns:
-                    amount = float(history_df['amount'].iloc[-1]) if len(history_df) > 0 else 0.0
+                # 如果实时数据获取失败，从历史数据获取价格
+                if latest_price == 0 and len(closes) > 0:
+                    latest_price = float(closes[-1])
 
-                # 计算涨跌幅
-                if len(closes) >= 2:
+                # 如果实时数据获取失败，从历史数据获取成交量
+                if volume == 0 and 'volume' in history_df.columns and len(history_df) > 0:
+                    volume = float(history_df['volume'].iloc[-1])
+
+                # 计算涨跌幅（如果实时数据没有）
+                if change_percent == 0 and len(closes) >= 2:
                     change_percent = (closes[-1] - closes[-2]) / closes[-2] * 100
 
             # 构建技术数据对象
-            # 注意：部分字段使用默认值，因为fetcher暂不提供
             technical_data = ConvertibleTechnicalData(
                 cb_code=cb_code,
                 cb_name=cb_name,
@@ -219,19 +278,19 @@ class ConvertibleBondTechnicalAnalyzer:
                 change_percent=change_percent,
                 volume=volume,
                 amount=amount,
-                conversion_price=0.0,      # 需要从detail接口获取
-                conversion_value=0.0,      # 需要从realtime接口获取
-                premium_rate=0.0,          # 需要从realtime接口获取
-                bond_rating="",            # 需要从detail接口获取
-                pure_bond_value=0.0,       # 需要计算
-                ytm=0.0,                   # 需要计算
-                call_trigger_price=0.0,    # 需要从detail接口获取
-                put_trigger_price=0.0,     # 需要从detail接口获取
-                conversion_trigger_price=0.0,  # 需要从detail接口获取
-                bid_price=[],              # 需要从realtime接口获取
-                ask_price=[],              # 需要从realtime接口获取
-                bid_volume=[],             # 需要从realtime接口获取
-                ask_volume=[],             # 需要从realtime接口获取
+                conversion_price=conversion_price,
+                conversion_value=conversion_value,
+                premium_rate=premium_rate,
+                bond_rating="",            # 暂不支持
+                pure_bond_value=pure_bond_value,
+                ytm=0.0,                   # 暂不支持
+                call_trigger_price=call_trigger_price,
+                put_trigger_price=put_trigger_price,
+                conversion_trigger_price=0.0,  # 暂不支持
+                bid_price=[],              # 暂不支持
+                ask_price=[],              # 暂不支持
+                bid_volume=[],             # 暂不支持
+                ask_volume=[],             # 暂不支持
                 ma5=ma5,
                 ma20=ma20,
                 volatility_20d=volatility_20d
