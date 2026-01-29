@@ -529,6 +529,18 @@ def render_convertible_analysis_page(cb_technical_analyzer):
         render_convertible_factors_page()
 
 
+@st.cache_data(ttl=3600)
+def get_cached_industries(_fetcher):
+    """缓存行业列表数据（1小时）"""
+    return _fetcher.get_industry_list()
+
+
+@st.cache_data(ttl=1800)
+def get_cached_convertible_by_industry(_fetcher, industry_name):
+    """缓存行业转债映射（30分钟）"""
+    return _fetcher.get_convertible_by_industry(industry_name)
+
+
 def render_convertible_factors_page():
     """渲染可转债量化因子页面"""
 
@@ -604,8 +616,20 @@ def render_medium_term_quick_screen():
 
         try:
             from analysis.convertible_medium_term import ConvertibleBondMediumTermAnalyzer
+            from data.fetchers.akshare_fetcher import AKShareFetcher
+
+            # 创建fetcher实例
+            fetcher = AKShareFetcher()
+
+            # 使用缓存函数替换fetcher方法
+            original_get_industry_list = fetcher.get_industry_list
+            original_get_convertible_by_industry = fetcher.get_convertible_by_industry
+
+            fetcher.get_industry_list = lambda: get_cached_industries(fetcher)
+            fetcher.get_convertible_by_industry = lambda name: get_cached_convertible_by_industry(fetcher, name)
 
             analyzer = ConvertibleBondMediumTermAnalyzer(agent)
+            analyzer.fetcher = fetcher  # 使用带缓存的fetcher
 
             # 执行筛选
             with st.spinner("正在筛选，请稍候..."):
