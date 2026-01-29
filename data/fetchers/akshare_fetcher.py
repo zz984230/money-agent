@@ -105,7 +105,7 @@ class AKShareFetcher:
                     '代码': code,
                     '转债名称': str(row.get('name', '')),
                     '现价': float(row.get('trade', 0)) if pd.notna(row.get('trade')) else 0.0,
-                    '涨跌幅': float(row.get('pricechange', 0)) if pd.notna(row.get('pricechange')) else 0.0,
+                    '涨跌幅': float(row.get('changepercent', 0)) if pd.notna(row.get('changepercent')) else 0.0,
                     '正股代码': '',
                     '正股名称': '',
                     '转股价': 0.0,
