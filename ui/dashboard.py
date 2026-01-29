@@ -881,8 +881,177 @@ def render_etf_lof_gamble_page(gamble_analyzer):
     </div>
     """, unsafe_allow_html=True)
 
-    st.info("ETF/LOF投机分析功能开发中，敬请期待...")
-    # TODO: 实现异常波动筛选、AI深度分析、因子分析汇总三个Tab页面
+    tab1, tab2, tab3 = st.tabs(["异常波动筛选", "AI深度分析", "因子分析汇总"])
+
+    with tab1:
+        render_abnormal_screening_page(gamble_analyzer)
+
+    with tab2:
+        render_ai_analysis_page(gamble_analyzer)
+
+    with tab3:
+        render_factor_summary_page(gamble_analyzer)
+
+
+def render_abnormal_screening_page(gamble_analyzer):
+    """渲染异常波动筛选页面"""
+    st.subheader("异常波动筛选")
+
+    with st.form("abnormal_screening_form"):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            window = st.selectbox(
+                "时间窗口",
+                options=[2, 3, 5],
+                format_func=lambda x: f"{x}天",
+                index=1  # 默认3天
+            )
+
+        with col2:
+            threshold = st.slider(
+                "波动阈值",
+                min_value=5,
+                max_value=30,
+                value=15,
+                help="累计涨跌幅超过此百分比视为异常"
+            )
+
+        with col3:
+            fund_types = st.multiselect(
+                "标的选择",
+                options=["大宗商品LOF", "海外ETF"],
+                default=["大宗商品LOF", "海外ETF"]
+            )
+
+        top_n = st.slider("返回数量", min_value=5, max_value=50, value=20)
+
+        submitted = st.form_submit_button("开始筛选", use_container_width=True)
+
+    if submitted:
+        if not fund_types:
+            st.error("请至少选择一种标的类型！")
+            return
+
+        # 转换fund_types
+        fund_type_map = {
+            "大宗商品LOF": "commodity",
+            "海外ETF": "overseas"
+        }
+        criteria_types = [fund_type_map[t] for t in fund_types]
+
+        criteria = {
+            'window': window,
+            'threshold': threshold / 100,  # 转换为小数
+            'fund_types': criteria_types
+        }
+
+        # 显示筛选条件
+        st.markdown("### 筛选条件")
+        criteria_df = pd.DataFrame([
+            {"参数": "时间窗口", "值": f"{window}天"},
+            {"参数": "波动阈值", "值": f"≥ ±{threshold}%"},
+            {"参数": "标的类型", "值": ", ".join(fund_types)},
+            {"参数": "返回数量", "值": top_n}
+        ])
+        st.dataframe(criteria_df, use_container_width=True, hide_index=True)
+
+        # 执行筛选
+        with st.spinner("正在筛选分析，请稍候..."):
+            try:
+                results = gamble_analyzer.screen_and_analyze(criteria, top_n)
+
+                if results:
+                    st.markdown(f"""
+                    <div class="success-box">
+                        <h4>筛选完成！找到 {len(results)} 个异常波动标的</h4>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # 显示结果列表
+                    display_screening_results(results)
+
+                else:
+                    st.markdown("""
+                    <div class="warning-box">
+                        <h4>未找到符合条件的标的</h4>
+                        <p>请尝试调整筛选条件...</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            except Exception as e:
+                st.markdown(f"""
+                <div class="error-box">
+                    <h4>筛选失败</h4>
+                    <p>错误信息: {str(e)}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+
+def display_screening_results(results):
+    """显示筛选结果"""
+    # 准备数据
+    result_data = []
+    for r in results:
+        # 获取最近异常事件
+        recent_event = r.abnormal_events[-1] if r.abnormal_events else None
+        recent_change = recent_event['return_pct'] * 100 if recent_event else 0
+        current_price = r.current_factors.get('price_trend', 0)  # 简化处理
+
+        result_data.append({
+            "代码": r.symbol,
+            "名称": r.name,
+            "类型": r.fund_type,
+            "异常事件数": r.abnormal_events_count,
+            "最近波动": f"{recent_change:.1f}%"
+        })
+
+    df = pd.DataFrame(result_data)
+
+    st.dataframe(
+        df,
+        column_config={
+            "代码": st.column_config.TextColumn("代码", width="short"),
+            "名称": st.column_config.TextColumn("名称", width="medium"),
+            "类型": st.column_config.TextColumn("类型", width="short"),
+            "异常事件数": st.column_config.NumberColumn("异常事件", width="short"),
+            "最近波动": st.column_config.TextColumn("最近波动", width="short")
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # 选择查看详情
+    st.markdown("---")
+    st.subheader("查看AI分析详情")
+
+    selected_code = st.selectbox(
+        "选择标的查看详情",
+        options=[r.symbol for r in results],
+        format_func=lambda x: next((r.name for r in results if r.symbol == x), x)
+    )
+
+    if selected_code:
+        selected_result = next((r for r in results if r.symbol == selected_code), None)
+        if selected_result:
+            with st.expander(f"📊 {selected_result.name} ({selected_result.symbol}) - AI分析", expanded=True):
+                st.markdown(selected_result.ai_summary)
+
+
+def render_ai_analysis_page(gamble_analyzer):
+    """渲染AI深度分析页面"""
+    st.subheader("AI深度分析")
+
+    st.info("AI深度分析功能开发中，敬请期待...")
+    # TODO: 实现单个标的详细AI分析页面
+
+
+def render_factor_summary_page(gamble_analyzer):
+    """渲染因子分析汇总页面"""
+    st.subheader("因子分析汇总")
+
+    st.info("因子分析汇总功能开发中，敬请期待...")
+    # TODO: 实现跨标的因子重要性排名页面
 
 
 def main():
