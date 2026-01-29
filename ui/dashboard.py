@@ -17,7 +17,6 @@ from core.agent.modelscope_agent import ModelScopeAgent
 from analysis.screening import StockScreener
 from analysis.market_analysis import MarketAnalyzer
 from analysis.etf_analysis import ETFAnalyzer
-from analysis.convertible_analysis import ConvertibleBondAnalyzer
 from analysis.convertible_technical_analysis import (
     ConvertibleBondTechnicalAnalyzer,
     TechnicalAnalysisResult
@@ -95,18 +94,17 @@ def initialize_agent():
 def get_analyzers(_agent):
     """获取分析器实例（缓存以提高性能）"""
     if _agent is None:
-        return None, None, None, None, None
+        return None, None, None, None
 
     try:
         screener = StockScreener(_agent)
         market_analyzer = MarketAnalyzer(_agent)
         etf_analyzer = ETFAnalyzer(_agent)
-        cb_analyzer = ConvertibleBondAnalyzer(_agent)
         cb_technical_analyzer = ConvertibleBondTechnicalAnalyzer(_agent)
-        return screener, market_analyzer, etf_analyzer, cb_analyzer, cb_technical_analyzer
+        return screener, market_analyzer, etf_analyzer, cb_technical_analyzer
     except Exception as e:
         st.error(f"初始化分析器失败: {str(e)}")
-        return None, None, None, None, None
+        return None, None, None, None
 
 
 def render_home_page():
@@ -135,8 +133,8 @@ def render_home_page():
         st.info("ETF 基金分析和推荐，辅助资产配置决策")
 
     with col4:
-        st.metric(label="可转债", value="双低策略", delta="套利机会")
-        st.info("可转债分析和双低策略筛选，发现套利机会")
+        st.metric(label="可转债", value="技术面", delta="深度分析")
+        st.info("可转债技术面分析，基于价格和成交量等指标")
 
     st.markdown("---")
 
@@ -517,188 +515,6 @@ def render_etf_analysis_page(etf_analyzer):
                     """, unsafe_allow_html=True)
 
 
-def render_convertible_analysis_page(cb_analyzer):
-    """渲染可转债分析页面"""
-    st.markdown('<div class="sub-header">🎫 可转债分析</div>', unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="info-box">
-        可转债分析和双低策略筛选，发现套利机会。双低策略：选择价格低、溢价率低的可转债。
-        <br><small>注意：支持任意可转债名称，不在数据列表中的可转债将使用AI知识库进行分析。</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-    tab1, tab2 = st.tabs(["可转债分析", "双低策略"])
-
-    with tab1:
-        with st.form("convertible_analysis_form"):
-            cb_name = st.text_input("可转债名称", value="艾为转债", help="可转债名称，支持模糊匹配")
-
-            submitted = st.form_submit_button("开始分析", use_container_width=True)
-
-        if submitted:
-            if not cb_name:
-                st.error("请输入可转债名称！")
-                return
-
-            with st.spinner("AI 正在分析可转债，请稍候..."):
-                try:
-                    result = cb_analyzer.analyze_convertible_by_name(cb_name)
-
-                    if result:
-                        # 检查是否是 Tushare 错误
-                        if result.get("error"):
-                            st.markdown(f"""
-                            <div class="error-box">
-                                <h4>获取财务数据失败</h4>
-                                <p><strong>错误信息：</strong>{result.get('summary', '')}</p>
-                                <p><strong>解决方案：</strong></p>
-                                <ul>
-                                    <li>确保已在 .env 文件中配置 TUSHARE_TOKEN</li>
-                                    <li>确认 Tushare Pro Token 有效且有积分余额</li>
-                                    <li>检查网络连接是否正常</li>
-                                    <li>访问 <a href="https://tushare.pro" target="_blank">Tushare Pro</a> 获取 Token</li>
-                                </ul>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            return
-
-                        st.markdown(f"""
-                        <div class="success-box">
-                            <h4>分析完成！</h4>
-                            <p>可转债代码: {result['cb_code']}</p>
-                            <p>可转债名称: {result['cb_name']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        # 显示可转债数据
-                        if result.get("data"):
-                            st.markdown("### 可转债数据")
-                            data_df = pd.DataFrame([result["data"]])
-                            st.dataframe(data_df, use_container_width=True, hide_index=True)
-
-                        # 显示分析摘要
-                        if result.get("summary"):
-                            st.markdown("### 分析摘要")
-                            st.info(result["summary"])
-
-                        # 显示完整分析
-                        with st.expander("查看完整分析报告", expanded=True):
-                            st.markdown("### AI 分析报告")
-                            st.markdown(result["analysis"])
-                    else:
-                        st.markdown("""
-                        <div class="warning-box">
-                            <h4>分析失败</h4>
-                            <p>AI分析失败，可能的原因：</p>
-                            <ul>
-                                <li>API请求频率超限（请稍后重试）</li>
-                                <li>网络连接问题</li>
-                                <li>API配置错误</li>
-                            </ul>
-                            <p>请检查配置后重试，或联系管理员。</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                except Exception as e:
-                    st.markdown(f"""
-                    <div class="error-box">
-                        <h4>分析出错</h4>
-                        <p>错误信息: {str(e)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-    with tab2:
-        st.markdown("### 双低策略筛选")
-        st.markdown("""
-        <div class="info-box">
-            <p><strong>双低策略</strong>：选择价格低、溢价率低的可转债</p>
-            <p>双低值 = 可转债价格 + 溢价率，值越低越安全</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.form("double_low_form"):
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                max_price = st.number_input(
-                    "最大价格",
-                    value=110.0,
-                    min_value=80.0,
-                    max_value=200.0,
-                    step=5.0,
-                    help="可转债最大价格"
-                )
-
-            with col2:
-                max_premium = st.number_input(
-                    "最大溢价率 (%)",
-                    value=30.0,
-                    min_value=0.0,
-                    max_value=100.0,
-                    step=5.0,
-                    help="可转债最大溢价率"
-                )
-
-            with col3:
-                top_n = st.slider("返回数量", min_value=1, max_value=20, value=10)
-
-            submitted = st.form_submit_button("开始筛选", use_container_width=True)
-
-        if submitted:
-            with st.spinner("正在筛选双低可转债，请稍候..."):
-                try:
-                    result = cb_analyzer.screen_double_low(max_price, max_premium, top_n)
-
-                    if result and len(result) > 0:
-                        st.markdown(f"""
-                        <div class="success-box">
-                            <h4>筛选完成！找到 {len(result)} 只双低可转债</h4>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        # 显示筛选结果
-                        result_df = pd.DataFrame(result)
-                        st.markdown("### 筛选结果")
-                        st.dataframe(
-                            result_df[["cb_code", "cb_name", "price", "premium", "double_low"]],
-                            column_config={
-                                "cb_code": st.column_config.TextColumn("代码", width="short"),
-                                "cb_name": st.column_config.TextColumn("名称", width="medium"),
-                                "price": st.column_config.NumberColumn("价格", format="%.2f"),
-                                "premium": st.column_config.NumberColumn("溢价率(%)", format="%.2f"),
-                                "double_low": st.column_config.NumberColumn("双低值", format="%.2f")
-                            },
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                        # 显示投资建议
-                        st.markdown("### 投资建议")
-                        st.info("""
-                        双低策略是一种相对保守的可转债投资策略：
-                        - 价格越低，安全边际越高
-                        - 溢价率越低，转股价值越高
-                        - 双低值越低，投资价值越大
-                        - 建议关注双低值低于 130 的可转债
-                        """)
-                    else:
-                        st.markdown("""
-                        <div class="warning-box">
-                            <h4>未找到符合条件的可转债</h4>
-                            <p>请尝试调整筛选条件...</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                except Exception as e:
-                    st.markdown(f"""
-                    <div class="error-box">
-                        <h4>筛选出错</h4>
-                        <p>错误信息: {str(e)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-
 def render_convertible_technical_page(cb_technical_analyzer):
     """渲染可转债技术面分析页面"""
     st.markdown('<div class="sub-header">📊 可转债技术面分析</div>', unsafe_allow_html=True)
@@ -818,7 +634,7 @@ def main():
     """主函数"""
     # 初始化 Agent 和分析器
     agent = initialize_agent()
-    screener, market_analyzer, etf_analyzer, cb_analyzer, cb_technical_analyzer = get_analyzers(agent)
+    screener, market_analyzer, etf_analyzer, cb_technical_analyzer = get_analyzers(agent)
 
     # 侧边栏导航
     with st.sidebar:
@@ -827,7 +643,7 @@ def main():
 
         page = st.radio(
             "选择功能",
-            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债分析", "可转债技术面"],
+            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债技术面"],
             label_visibility="collapsed"
         )
 
@@ -854,11 +670,6 @@ def main():
             st.success("✅ ETF 模块就绪")
         else:
             st.error("❌ ETF 模块未就绪")
-
-        if cb_analyzer is not None:
-            st.success("✅ 可转债模块就绪")
-        else:
-            st.error("❌ 可转债模块未就绪")
 
         if cb_technical_analyzer is not None:
             st.success("✅ 可转债技术面模块就绪")
@@ -902,12 +713,6 @@ def main():
             st.error("ETF 模块未初始化，请检查配置！")
         else:
             render_etf_analysis_page(etf_analyzer)
-
-    elif page == "可转债分析":
-        if cb_analyzer is None:
-            st.error("可转债模块未初始化，请检查配置！")
-        else:
-            render_convertible_analysis_page(cb_analyzer)
 
     elif page == "可转债技术面":
         if cb_technical_analyzer is None:
