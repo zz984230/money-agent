@@ -183,23 +183,23 @@ class ConvertibleBondTechnicalAnalyzer:
             # 获取详细信息（包含转股价值、溢价值等）
             detail = self.fetcher.get_convertible_detail(cb_code)
 
-            # 优先获取实时数据
+            # 优先从可转债列表中获取涨跌幅（数据更准确、更实时）
+            cb_list = self.fetcher.get_convertible_list()
+            for cb in cb_list:
+                if cb.get('代码') == cb_code:
+                    change_percent = float(cb.get('涨跌幅', 0))
+                    break
+
+            # 获取实时价格、成交量、成交额
             realtime_data = self.fetcher.get_convertible_realtime(cb_code)
 
-            # 从实时数据获取最新价格、涨跌幅、成交量等
+            # 从实时数据获取最新价格、成交量、成交额
             latest_price = 0.0
-            change_percent = 0.0
             volume = 0.0
             amount = 0.0
 
             if realtime_data:
                 latest_price = float(realtime_data.get('price', 0))
-                change_percent = float(realtime_data.get('change_percent', 0))
-                if change_percent == 0 and realtime_data.get('change'):
-                    # 如果没有涨跌幅百分比，尝试用涨跌额计算
-                    change = float(realtime_data.get('change', 0))
-                    if latest_price > 0:
-                        change_percent = (change / (latest_price - change)) * 100 if (latest_price - change) != 0 else 0
                 volume = float(realtime_data.get('volume', 0))
                 amount = float(realtime_data.get('amount', 0))
 
