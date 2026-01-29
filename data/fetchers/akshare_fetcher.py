@@ -831,3 +831,78 @@ class AKShareFetcher:
         except Exception as e:
             logger.error(f"获取海外ETF列表失败: {e}", exc_info=True)
             return []
+
+    def get_lof_etf_history(self, symbol: str, period: int = 365) -> Optional[pd.DataFrame]:
+        """
+        获取LOF/ETF历史行情数据
+
+        Args:
+            symbol: 基金代码
+            period: 获取天数，默认365天
+
+        Returns:
+            DataFrame with columns: date, open, close, high, low, volume, amount
+            or None if failed
+        """
+        from datetime import datetime, timedelta
+
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=period)).strftime('%Y%m%d')
+
+        try:
+            # 尝试使用基金历史数据接口
+            df = ak.fund_etf_hist_em(
+                symbol=symbol,
+                period="daily",
+                start_date=start_date,
+                end_date=end_date,
+                adjust=""  # 不复权
+            )
+
+            if df is not None and len(df) > 0:
+                # 标准化列名
+                df = df[['日期', '开盘', '收盘', '最高', '最低', '成交量', '成交额']].copy()
+                df.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount']
+                df['date'] = pd.to_datetime(df['date'])
+                df.set_index('date', inplace=True)
+
+                # 确保数据类型正确
+                for col in ['open', 'close', 'high', 'low']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+
+                logger.info(f"获取{symbol}历史数据成功，共{len(df)}条记录")
+                return df
+
+        except Exception as e:
+            logger.error(f"获取{symbol}历史数据失败: {e}")
+
+        # 备用方法：尝试sina数据源
+        try:
+            df = ak.fund_etf_hist_sina(symbol=symbol)
+            if df is not None and len(df) > 0:
+                df.index = pd.to_datetime(df.index)
+                # 重命名列以匹配标准格式
+                column_mapping = {
+                    'open': 'open',
+                    'close': 'close',
+                    'high': 'high',
+                    'low': 'low',
+                    'volume': 'volume'
+                }
+                df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+                # 确保所有必需列存在
+                required_cols = ['open', 'close', 'high', 'low']
+                for col in required_cols:
+                    if col not in df.columns:
+                        df[col] = df['close']  # 如果缺失，用close填充
+
+                if 'volume' not in df.columns:
+                    df['volume'] = 0
+
+                logger.info(f"通过备用接口获取{symbol}历史数据")
+                return df
+        except Exception as e:
+            logger.error(f"备用接口也失败: {e}")
+
+        return None
