@@ -515,10 +515,58 @@ def render_etf_analysis_page(etf_analyzer):
                     """, unsafe_allow_html=True)
 
 
-def render_convertible_technical_page(cb_technical_analyzer):
-    """渲染可转债技术面分析页面"""
-    st.markdown('<div class="sub-header">📊 可转债技术面分析</div>', unsafe_allow_html=True)
+def render_convertible_analysis_page(cb_technical_analyzer):
+    """渲染可转债分析页面（包含子菜单）"""
+    st.markdown('<div class="sub-header">🎫 可转债分析</div>', unsafe_allow_html=True)
 
+    # 子菜单导航（使用tabs实现）
+    tab1, tab2 = st.tabs(["分析概览", "量化因子"])
+
+    with tab1:
+        render_convertible_overview_page(cb_technical_analyzer)
+
+    with tab2:
+        render_convertible_factors_page()
+
+
+def render_convertible_factors_page():
+    """渲染可转债量化因子页面（待开发）"""
+    st.markdown("""
+    <div class="info-box">
+        可转债量化因子分析，帮助识别高潜力转债标的。
+        <br><small>功能开发中，敬请期待...</small>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.info("🚧 量化因子分析功能正在开发中，即将推出！")
+
+    # 预览即将推出的功能
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("""
+        ### 🔮 双低因子
+        • 价格 + 溢价率
+        • 价值发现策略
+        """)
+
+    with col2:
+        st.markdown("""
+        ### 📊 动量因子
+        • 价格趋势
+        • 成交量变化
+        """)
+
+    with col3:
+        st.markdown("""
+        ### ⚡ 波动率因子
+        • 历史波动率
+        • 隐含波动率
+        """)
+
+
+def render_convertible_overview_page(cb_technical_analyzer):
+    """渲染可转债分析概览页面（技术面分析）"""
     st.markdown("""
     <div class="info-box">
         可转债技术面分析，基于价格、成交量、技术指标等数据进行深度分析。
@@ -643,7 +691,7 @@ def main():
 
         page = st.radio(
             "选择功能",
-            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债技术面"],
+            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债分析"],
             label_visibility="collapsed"
         )
 
@@ -672,9 +720,9 @@ def main():
             st.error("❌ ETF 模块未就绪")
 
         if cb_technical_analyzer is not None:
-            st.success("✅ 可转债技术面模块就绪")
+            st.success("✅ 可转债分析模块就绪")
         else:
-            st.error("❌ 可转债技术面模块未就绪")
+            st.error("❌ 可转债分析模块未就绪")
 
         st.markdown("---")
 
@@ -714,11 +762,11 @@ def main():
         else:
             render_etf_analysis_page(etf_analyzer)
 
-    elif page == "可转债技术面":
+    elif page == "可转债分析":
         if cb_technical_analyzer is None:
-            st.error("可转债技术面模块未初始化，请检查配置！")
+            st.error("可转债分析模块未初始化，请检查配置！")
         else:
-            render_convertible_technical_page(cb_technical_analyzer)
+            render_convertible_analysis_page(cb_technical_analyzer)
 
 
 if __name__ == "__main__":
