@@ -63,3 +63,23 @@ def test_medium_term_screen():
     assert hasattr(results, 'bonds')
     assert hasattr(results, 'ai_analysis')
     assert len(results.bonds) > 0
+
+
+@pytest.mark.integration
+def test_full_medium_term_workflow():
+    """完整的中期量化集成测试（需要真实API）"""
+    from core.agent.glm_agent import GLMAgent
+    from analysis.convertible_medium_term import ConvertibleBondMediumTermAnalyzer
+
+    agent = GLMAgent()
+    analyzer = ConvertibleBondMediumTermAnalyzer(agent)
+
+    result = analyzer.medium_term_screen(
+        top_n_industries=3,
+        top_n_bonds=3,
+        premium_max=30.0
+    )
+
+    assert result is not None
+    assert len(result.industries) > 0
+    assert len(result.bonds) > 0
