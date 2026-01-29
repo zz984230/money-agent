@@ -202,13 +202,16 @@ class AKShareFetcher:
         try:
             # bond_zh_hs_cov_daily 需要带市场前缀的完整代码
             # 深市代码以 0, 1, 2, 3 开头，使用 sz 前缀
-            # 沪市代码以 6, 11 开头，使用 sh 前缀
+            # 沪市代码以 6, 11, 13 开头，使用 sh 前缀
+            # 注意：要先匹配沪市的两位前缀（11, 13），再匹配深市的一位前缀
             original_symbol = symbol
             if not symbol.startswith(('sz', 'sh')):
-                if symbol.startswith(('0', '1', '2', '3')):
-                    symbol = 'sz' + symbol
-                elif symbol.startswith(('6', '11')):
+                if symbol.startswith(('6', '11', '13')):
+                    # 沪市：6xxx 或 11xxxx 或 13xxxx
                     symbol = 'sh' + symbol
+                elif symbol.startswith(('0', '1', '2', '3')):
+                    # 深市：0xxx 或 1xxx（非11开头）或 2xxx 或 3xxx
+                    symbol = 'sz' + symbol
                 else:
                     # 默认使用深市
                     symbol = 'sz' + symbol
