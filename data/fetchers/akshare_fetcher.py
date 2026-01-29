@@ -242,3 +242,55 @@ class AKShareFetcher:
         except Exception as e:
             logger.error(f"获取可转债 {cb_code} 详情失败: {e}", exc_info=True)
             return None
+
+    def get_convertible_realtime(self, cb_code: str) -> Optional[Dict]:
+        """
+        获取可转债实时行情和盘口数据
+
+        Args:
+            cb_code: 可转债代码
+
+        Returns:
+            包含实时行情和盘口数据的字典
+        """
+        try:
+            import akshare as ak
+
+            logger.debug(f"开始获取可转债 {cb_code} 的实时行情数据")
+
+            # 获取沪深可转债现货数据
+            df = ak.bond_zh_hs_cov_spot()
+
+            if df is None or df.empty:
+                logger.warning(f"获取可转债实时数据失败：返回数据为空")
+                return None
+
+            # 查找对应转债
+            matching = df[df['code'].astype(str) == cb_code]
+
+            if matching.empty:
+                logger.warning(f"未找到可转债 {cb_code} 的实时数据")
+                return None
+
+            row = matching.iloc[0]
+
+            result = {
+                "cb_code": cb_code,
+                "price": float(row.get('trade', 0)),
+                "change": float(row.get('changepercent', 0)),
+                "volume": float(row.get('volume', 0)),
+                "amount": float(row.get('amount', 0)),
+                "high": float(row.get('high', 0)),
+                "low": float(row.get('low', 0)),
+                "open": float(row.get('open', 0)),
+            }
+
+            # 盘口数据（如果AKShare提供）
+            # 注意：bond_zh_hs_cov_spot 可能不提供五档盘口，需要探索其他接口
+
+            logger.debug(f"成功获取可转债 {cb_code} 的实时行情数据")
+            return result
+
+        except Exception as e:
+            logger.error(f"获取可转债 {cb_code} 实时数据失败: {e}", exc_info=True)
+            return None

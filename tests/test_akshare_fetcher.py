@@ -174,3 +174,55 @@ class TestAKShareFetcherConvertible:
         result = fetcher.get_convertible_detail('999999')
 
         assert result is None
+
+    @patch('akshare.bond_zh_hs_cov_spot')
+    def test_get_convertible_realtime_success(self, mock_bond_spot, fetcher):
+        """测试成功获取实时行情和盘口"""
+        mock_spot_data = pd.DataFrame({
+            'code': ['113527'],
+            'name': ['利民转债'],
+            'trade': [105.5],
+            'changepercent': [0.5],
+            'volume': [1000000],
+            'amount': [105500000],
+            'high': [106.0],
+            'low': [105.0],
+            'open': [105.2],
+        })
+        mock_bond_spot.return_value = mock_spot_data
+
+        result = fetcher.get_convertible_realtime('113527')
+
+        assert result is not None
+        assert result['price'] == 105.5
+        assert result['volume'] == 1000000
+        assert result['change'] == 0.5
+
+    @patch('akshare.bond_zh_hs_cov_spot')
+    def test_get_convertible_realtime_api_error(self, mock_bond_spot, fetcher):
+        """测试API调用失败"""
+        mock_bond_spot.side_effect = Exception("Network error")
+
+        result = fetcher.get_convertible_realtime('113527')
+
+        assert result is None
+
+    @patch('akshare.bond_zh_hs_cov_spot')
+    def test_get_convertible_realtime_not_found(self, mock_bond_spot, fetcher):
+        """测试转债代码不存在的情况"""
+        mock_spot_data = pd.DataFrame({
+            'code': ['113528', '113529'],
+            'name': ['其他转债1', '其他转债2'],
+            'trade': [100.0, 101.0],
+            'changepercent': [0.0, 0.5],
+            'volume': [500000, 600000],
+            'amount': [50000000, 60600000],
+            'high': [100.5, 101.5],
+            'low': [99.5, 100.5],
+            'open': [100.0, 101.0],
+        })
+        mock_bond_spot.return_value = mock_spot_data
+
+        result = fetcher.get_convertible_realtime('113527')
+
+        assert result is None
