@@ -1042,8 +1042,114 @@ def render_ai_analysis_page(gamble_analyzer):
     """渲染AI深度分析页面"""
     st.subheader("AI深度分析")
 
-    st.info("AI深度分析功能开发中，敬请期待...")
-    # TODO: 实现单个标的详细AI分析页面
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        analysis_code = st.text_input(
+            "基金代码",
+            placeholder="如 163415",
+            help="输入6位基金代码"
+        )
+
+    with col2:
+        st.write("")  # 占位
+        analyze_btn = st.button("开始分析", type="primary")
+
+    if analyze_btn and analysis_code:
+        with st.spinner("正在分析，请稍候..."):
+            try:
+                result = gamble_analyzer.analyze_single(
+                    analysis_code,
+                    f"基金{analysis_code}",  # 简化名称
+                    "LOF"  # 默认类型
+                )
+
+                if result:
+                    display_ai_analysis_result(result)
+                else:
+                    st.warning("""
+                    **分析未完成**
+
+                    可能原因：
+                    1. 数据不足（需要至少100天历史数据）
+                    2. 未发现异常波动事件
+                    3. 无法获取数据
+
+                    请尝试其他代码或调整筛选条件。
+                    """)
+
+            except Exception as e:
+                st.error(f"分析失败: {str(e)}")
+
+    # 使用说明
+    with st.expander("💡 使用说明"):
+        st.markdown("""
+        ### 常见LOF/ETF代码参考
+
+        **大宗商品LOF：**
+        - 163415: 白银LOF
+        - 161116: 黄金基金
+        - 162411: 华宝油气
+        - 160716: 有色金属
+
+        **海外ETF：**
+        - 513100: 纳斯达克100
+        - 513500: 标普500
+        - 513660: 恒生ETF
+
+        ### 分析内容
+
+        AI将为您分析：
+        1. **因子解读** - 当前关键因子说明了什么
+        2. **历史规律** - 该标的异常波动的特点
+        3. **时机判断** - 是否适合买入
+        4. **操作建议** - 买入点位、止盈止损
+        5. **风险提示** - 主要风险点
+        """)
+
+
+def display_ai_analysis_result(result):
+    """显示AI分析结果"""
+    # 基础信息卡片
+    st.markdown(f"""
+    <div class="success-box">
+        <h4>📊 {result.name} ({result.symbol})</h4>
+        <p>类型: {result.fund_type} | 异常事件: {result.abnormal_events_count}次</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # AI分析
+    st.markdown(result.ai_summary)
+
+    # 关键因子展示
+    if result.feature_importance is not None and len(result.feature_importance) > 0:
+        with st.expander("📈 关键因子排名"):
+            st.dataframe(
+                result.feature_importance.head(10),
+                column_config={
+                    "feature": "因子",
+                    "importance": st.column_config.NumberColumn("重要性", format="%.3f")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+    # 异常事件历史
+    if result.abnormal_events:
+        with st.expander("📜 异常波动历史"):
+            events_df = pd.DataFrame(result.abnormal_events)
+            events_df['date'] = events_df['date'].dt.strftime('%Y-%m-%d')
+            events_df['return_pct'] = (events_df['return_pct'] * 100).round(1).astype(str) + '%'
+
+            st.dataframe(
+                events_df[['date', 'return_pct']],
+                column_config={
+                    "date": "日期",
+                    "return_pct": "涨跌幅"
+                },
+                use_container_width=True,
+                hide_index=True
+            )
 
 
 def render_factor_summary_page(gamble_analyzer):
