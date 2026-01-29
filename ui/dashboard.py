@@ -21,6 +21,7 @@ from analysis.convertible_technical_analysis import (
     ConvertibleBondTechnicalAnalyzer,
     TechnicalAnalysisResult
 )
+from analysis.etf_lof_gamble import LOFETFGambleAnalyzer
 
 # 页面配置
 st.set_page_config(
@@ -94,17 +95,18 @@ def initialize_agent():
 def get_analyzers(_agent):
     """获取分析器实例（缓存以提高性能）"""
     if _agent is None:
-        return None, None, None, None
+        return None, None, None, None, None
 
     try:
         screener = StockScreener(_agent)
         market_analyzer = MarketAnalyzer(_agent)
         etf_analyzer = ETFAnalyzer(_agent)
         cb_technical_analyzer = ConvertibleBondTechnicalAnalyzer(_agent)
-        return screener, market_analyzer, etf_analyzer, cb_technical_analyzer
+        gamble_analyzer = LOFETFGambleAnalyzer(_agent)
+        return screener, market_analyzer, etf_analyzer, cb_technical_analyzer, gamble_analyzer
     except Exception as e:
         st.error(f"初始化分析器失败: {str(e)}")
-        return None, None, None, None
+        return None, None, None, None, None
 
 
 def render_home_page():
@@ -869,11 +871,25 @@ def render_convertible_overview_page(cb_technical_analyzer):
                     st.error(f"筛选出错：{str(e)}")
 
 
+def render_etf_lof_gamble_page(gamble_analyzer):
+    """渲染ETF/LOF投机分析页面"""
+    st.markdown('<div class="sub-header">🎰 ETF/LOF 投机分析</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="info-box">
+        识别大宗商品LOF和海外ETF的异常波动（2-3天突增突降），计算预测因子，AI分析并给出操作建议。
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.info("ETF/LOF投机分析功能开发中，敬请期待...")
+    # TODO: 实现异常波动筛选、AI深度分析、因子分析汇总三个Tab页面
+
+
 def main():
     """主函数"""
     # 初始化 Agent 和分析器
     agent = initialize_agent()
-    screener, market_analyzer, etf_analyzer, cb_technical_analyzer = get_analyzers(agent)
+    screener, market_analyzer, etf_analyzer, cb_technical_analyzer, gamble_analyzer = get_analyzers(agent)
 
     # 侧边栏导航
     with st.sidebar:
@@ -882,7 +898,7 @@ def main():
 
         page = st.radio(
             "选择功能",
-            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债分析"],
+            ["首页", "选股筛选", "市场分析", "ETF 分析", "可转债分析", "ETF/LOF投机"],
             label_visibility="collapsed"
         )
 
@@ -914,6 +930,11 @@ def main():
             st.success("✅ 可转债分析模块就绪")
         else:
             st.error("❌ 可转债分析模块未就绪")
+
+        if gamble_analyzer is not None:
+            st.success("✅ 投机分析模块就绪")
+        else:
+            st.error("❌ 投机分析模块未就绪")
 
         st.markdown("---")
 
@@ -958,6 +979,12 @@ def main():
             st.error("可转债分析模块未初始化，请检查配置！")
         else:
             render_convertible_analysis_page(cb_technical_analyzer, agent)
+
+    elif page == "ETF/LOF投机":
+        if gamble_analyzer is None:
+            st.error("投机分析模块未初始化，请检查配置！")
+        else:
+            render_etf_lof_gamble_page(gamble_analyzer)
 
 
 if __name__ == "__main__":
