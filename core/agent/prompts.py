@@ -343,3 +343,61 @@ ETF名称：{etf_name}
 4. 给出具体的操作建议"""
 
         return prompt
+
+    def build_medium_term_analysis_prompt(
+        self,
+        industries: list,
+        top_bonds: list
+    ) -> str:
+        """
+        构建中期量化分析提示词
+
+        Args:
+            industries: 强势行业列表
+            top_bonds: Top转债列表
+
+        Returns:
+            构建好的中期量化分析提示词
+        """
+        # 格式化行业信息
+        industry_text = "\n".join([
+            f"- {ind.industry_name}: 相对强弱 {ind.relative_strength:.1f}%, 60日动量 {ind.momentum_60d:.1f}%"
+            for ind in industries[:5]
+        ])
+
+        # 格式化转债信息
+        bond_text = "\n".join([
+            f"- {b['cb_name']} ({b['cb_code']}): 行业 {b['industry']}, 溢价率 {b['premium_rate']:.1f}%, 评分 {b['score']:.1f}"
+            for b in top_bonds[:10]
+        ])
+
+        prompt = f"""你是一位专业的可转债投资分析师。请基于以下中期量化筛选结果，提供专业的投资分析建议：
+
+【识别出的强势行业】
+{industry_text}
+
+【精选转债列表】
+{bond_text}
+
+请从以下几个方面进行分析：
+
+1. **行业趋势分析**
+   - 分析各强势行业的驱动因素和可持续性
+   - 识别最具投资价值的行业
+
+2. **转债投资价值**
+   - 评估精选转债的风险收益特征
+   - 识别最具进攻性和防守性的标的
+
+3. **配置建议**
+   - 建议的行业配置比例
+   - 建议的转债选择策略
+
+4. **风险提示**
+   - 行业轮动风险
+   - 个券条款风险
+   - 流动性风险
+
+请用简洁专业的语言提供分析，重点关注实战价值。"""
+
+        return prompt
