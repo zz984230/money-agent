@@ -158,6 +158,45 @@ results = analyzer.screen_by_technical({"price_range": (100, 110)})
 5. 流动性分析：成交额评估
 6. 投资建议：买入/持有/卖出
 
+### ETF/LOF投机分析
+
+位于 `analysis/etf_lof_gamble.py`
+
+**核心功能:**
+- `detect_sudden_moves()` - 检测2-3天内的异常波动（突增突降）
+- `calculate_all_factors()` - 计算技术、流动性、大宗商品特有因子
+- `build_prediction_model()` - 构建预测模型识别预警信号
+- `analyze_single()` - 单个标的AI深度分析
+- `screen_and_analyze()` - 批量筛选和AI分析
+- `get_top_factors_across_funds()` - 跨标的因子汇总
+
+**使用示例:**
+```python
+from core.agent.modelscope_agent import ModelScopeAgent
+from analysis.etf_lof_gamble import LOFETFGambleAnalyzer
+
+agent = ModelScopeAgent()
+analyzer = LOFETFGambleAnalyzer(agent)
+
+# 单个分析
+result = analyzer.analyze_single('163415', '白银LOF', 'LOF')
+print(result.ai_summary)  # AI分析报告
+
+# 批量筛选
+results = analyzer.screen_and_analyze(
+    criteria={'window': 3, 'threshold': 0.15, 'fund_types': ['commodity']},
+    top_n=20
+)
+
+# 因子汇总
+factor_ranking = analyzer.get_top_factors_across_funds(results)
+```
+
+**UI页面:**
+- 异常波动筛选：按时间窗口、波动阈值筛选标的
+- AI深度分析：单个标的详细分析和操作建议
+- 因子分析汇总：跨标的因子重要性排名
+
 ### Streamlit Dashboard
 
 Located in `ui/dashboard.py`. Uses `@st.cache_resource` for agent initialization and `@st.cache_data` for analyzer instances. Pages: Home, Stock Screening, Market Analysis, ETF Analysis, Convertible Bonds.
