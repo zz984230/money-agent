@@ -45,32 +45,31 @@ class ConvertibleBondMediumTermAnalyzer:
 
     def _get_popular_industries(self) -> List[Dict]:
         """
-        获取预定义的热门行业列表
+        从本地文件获取行业列表
 
         Returns:
-            行业列表，使用东方财富的行业名称
+            行业列表
         """
-        # 使用东方财富行业板块名称
-        popular_industries = [
-            {'industry_code': '新能源', 'name': '新能源'},
-            {'industry_code': '半导体', 'name': '半导体'},
-            {'industry_code': '人工智能', 'name': '人工智能'},
-            {'industry_code': '锂电池', 'name': '锂电池'},
-            {'industry_code': '光伏设备', 'name': '光伏设备'},
-            {'industry_code': '国防军工', 'name': '国防军工'},
-            {'industry_code': '医药生物', 'name': '医药生物'},
-            {'industry_code': '食品饮料', 'name': '食品饮料'},
-            {'industry_code': '电子元件', 'name': '电子元件'},
-            {'industry_code': '汽车整车', 'name': '汽车整车'},
-            {'industry_code': '计算机应用', 'name': '计算机应用'},
-            {'industry_code': '通信设备', 'name': '通信设备'},
-            {'industry_code': '电力行业', 'name': '电力行业'},
-            {'industry_code': '有色金属', 'name': '有色金属'},
-            {'industry_code': '化工行业', 'name': '化工行业'},
-        ]
+        try:
+            # 尝试从本地文件读取
+            from pathlib import Path
 
-        logger.info(f"使用预定义行业列表，共 {len(popular_industries)} 个行业")
-        return popular_industries
+            data_file = Path(__file__).parent.parent / "data" / "industries.json"
+
+            if data_file.exists():
+                import json
+                with open(data_file, 'r', encoding='utf-8') as f:
+                    industries = json.load(f)
+
+                logger.info(f"从本地文件读取行业列表，共 {len(industries)} 个行业")
+                return industries
+            else:
+                logger.warning(f"行业数据文件不存在: {data_file}")
+                return []
+
+        except Exception as e:
+            logger.error(f"读取行业数据文件失败: {e}", exc_info=True)
+            return []
 
     def screen_top_industries(
         self,

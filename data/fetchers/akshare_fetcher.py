@@ -489,12 +489,8 @@ class AKShareFetcher:
             logger.debug(f"开始获取行业指数 {industry_symbol} 的历史数据（最近{days}天）")
 
             # 使用东方财富行业指数接口
-            # industry_symbol 是行业名称的英文标识，需要转换为实际接口参数
-            df = ak.stock_board_industry_hist_em(
-                symbol=industry_symbol,
-                period="daily",
-                adjust=""  # 不复权
-            )
+            # industry_symbol 是行业中文名称（如 "贵金属"）
+            df = ak.stock_board_industry_hist_em(symbol=industry_symbol)
 
             if df is None or df.empty:
                 logger.warning(f"获取行业指数 {industry_symbol} 历史数据失败：返回数据为空")
