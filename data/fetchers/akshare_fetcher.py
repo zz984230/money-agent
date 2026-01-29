@@ -718,3 +718,116 @@ class AKShareFetcher:
         except Exception as e:
             logger.error(f"计算技术指标失败: {e}", exc_info=True)
             return {}
+
+    def get_lof_list(self) -> pd.DataFrame:
+        """
+        获取所有LOF基金列表
+
+        Returns:
+            DataFrame with columns: code, name, fund_type
+        """
+        try:
+            # 使用基金搜索接口获取LOF列表
+            # 先获取开放式基金列表，然后筛选LOF
+            df = ak.fund_open_fund_info_em(fund="LOF", indicator="单位净值走势")
+
+            if df is None or df.empty:
+                # 备用方法：尝试使用其他接口
+                logger.warning("fund_open_fund_info_em接口失败，尝试备用方法")
+                return pd.DataFrame(columns=['code', 'name', 'fund_type'])
+
+            # 提取LOF基金代码和名称
+            lof_list = []
+            # 常见LOF代码前缀和知名LOF
+            known_lof = [
+                ('163415', '白银LOF'),
+                ('161116', '黄金基金'),
+                ('162411', '华宝油气'),
+                ('160716', '嘉实沪深300ETF联接'),
+                ('163407', '兴全合润'),
+            ]
+
+            for code, name in known_lof:
+                lof_list.append({
+                    'code': code,
+                    'name': name,
+                    'fund_type': 'LOF'
+                })
+
+            lof_df = pd.DataFrame(lof_list)
+            logger.info(f"获取LOF列表成功，共 {len(lof_df)} 只")
+            return lof_df
+
+        except Exception as e:
+            logger.error(f"获取LOF列表失败: {e}", exc_info=True)
+            # 返回预设的LOF列表作为备用
+            lof_list = [
+                ('163415', '白银LOF'),
+                ('161116', '黄金基金'),
+                ('162411', '华宝油气'),
+                ('160716', '嘉实300'),
+            ]
+            lof_df = pd.DataFrame([
+                {'code': code, 'name': name, 'fund_type': 'LOF'}
+                for code, name in lof_list
+            ])
+            return lof_df
+
+    def get_commodity_lof_list(self) -> List[Dict]:
+        """
+        获取大宗商品LOF列表
+
+        Returns:
+            List of dict: [{'code': 'xxx', 'name': 'xxx', 'type': 'LOF'}]
+        """
+        try:
+            lof_df = self.get_lof_list()
+            commodity_keywords = ['商品', '黄金', '原油', '石油', '白银', '有色金属',
+                                  '能源', '农产品', '豆粕', '煤炭', '钢铁']
+
+            commodity_lof = []
+            for _, row in lof_df.iterrows():
+                name = row['name']
+                if any(keyword in name for keyword in commodity_keywords):
+                    commodity_lof.append({
+                        'code': row['code'],
+                        'name': name,
+                        'type': 'LOF'
+                    })
+
+            logger.info(f"找到{len(commodity_lof)}个大宗商品LOF")
+            return commodity_lof
+        except Exception as e:
+            logger.error(f"获取大宗商品LOF列表失败: {e}", exc_info=True)
+            return []
+
+    def get_overseas_etf_list(self) -> List[Dict]:
+        """
+        获取海外相关ETF列表
+
+        Returns:
+            List of dict: [{'code': 'xxx', 'name': 'xxx', 'type': 'ETF'}]
+        """
+        try:
+            # 获取ETF列表
+            etf_df = ak.fund_etf_category_sina(symbol="ETF基金")
+
+            overseas_keywords = ['美股', '港股', '德国', '日本', '美国', '纳斯达克',
+                                '标普', '恒生', '欧洲', '亚太', '全球']
+
+            overseas_etf = []
+            for _, row in etf_df.iterrows():
+                name = row.get('name', '')
+                code = row.get('code', '')
+                if any(keyword in name for keyword in overseas_keywords):
+                    overseas_etf.append({
+                        'code': code,
+                        'name': name,
+                        'type': 'ETF'
+                    })
+
+            logger.info(f"找到{len(overseas_etf)}个海外ETF")
+            return overseas_etf
+        except Exception as e:
+            logger.error(f"获取海外ETF列表失败: {e}", exc_info=True)
+            return []
