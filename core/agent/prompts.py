@@ -4,6 +4,7 @@ Prompt Engineering Module
 """
 
 from typing import Dict, List, Optional, Union
+import pandas as pd
 
 
 class PromptBuilder:
@@ -399,5 +400,102 @@ ETF名称：{etf_name}
    - 流动性风险
 
 请用简洁专业的语言提供分析，重点关注实战价值。"""
+
+        return prompt
+
+    @staticmethod
+    def build_etf_lof_gamble_prompt(
+        symbol: str,
+        name: str,
+        fund_type: str,
+        abnormal_events: List[Dict],
+        current_factors: Dict,
+        feature_importance: pd.DataFrame,
+        current_data: Dict
+    ) -> str:
+        """
+        构建ETF/LOF投机分析的Prompt
+
+        Args:
+            symbol: 基金代码
+            name: 基金名称
+            fund_type: 基金类型 (LOF/ETF)
+            abnormal_events: 历史异常波动事件列表
+            current_factors: 当前预测因子值字典
+            feature_importance: 因子重要性DataFrame
+            current_data: 当前行情数据字典
+
+        Returns:
+            完整的分析Prompt字符串
+        """
+        # 格式化异常事件（最近5个）
+        recent_events = abnormal_events[-5:] if len(abnormal_events) > 5 else abnormal_events
+        events_text = "\n".join([
+            f"- {e['date'].strftime('%Y-%m-%d')}: "
+            f"{e['return_pct']*100:.1f}% (波动率: {e['volatility']*100:.1f}%)"
+            for e in recent_events
+        ]) if recent_events else "无历史异常事件"
+
+        # 格式化关键因子（Top 5）
+        if len(feature_importance) > 0:
+            top_factors = feature_importance.head(5)
+            factors_text = "\n".join([
+                f"- {row['feature']}: {current_factors.get(row['feature'], 'N/A')} "
+                f"(重要性: {row['importance']:.3f})"
+                for _, row in top_factors.iterrows()
+            ])
+        else:
+            factors_text = "无因子数据"
+
+        prompt = f"""
+你是一位专业的ETF/LOF短线交易分析师。请基于以下数据进行分析：
+
+## 标的概况
+- 代码: {symbol}
+- 名称: {name}
+- 类型: {fund_type}
+
+## 当前行情
+- 价格: {current_data.get('price', 'N/A')}
+- 涨跌幅: {current_data.get('change_pct', 'N/A')}%
+- 成交量: {current_data.get('volume', 'N/A')}
+- 波动率(20日): {current_data.get('volatility_20d', 'N/A')}
+
+## 历史异常波动事件（最近5个）
+{events_text}
+总计发现 {len(abnormal_events)} 个异常波动事件
+
+## 当前关键因子（Top 5）
+{factors_text}
+
+## 分析要求
+
+请按以下结构进行分析（使用Markdown格式）：
+
+### 1. 因子解读
+分析当前关键因子值说明了什么？是否有预警信号？
+
+### 2. 历史规律
+该标的异常波动的特点是什么？通常持续多久？
+
+### 3. 时机判断
+当前是否适合买入？请给出明确判断：
+- ✅ **适合买入** - 因子显示即将出现异常波动
+- ⏸️ **观望** - 信号不明确，建议继续观察
+- ❌ **不适合买入** - 因子显示风险较高
+
+### 4. 操作建议
+如果判断适合买入，请给出：
+- **买入点位**: 具体价格（基于当前价格给出）
+- **止盈位**: 目标价格（给出1-2个）
+- **止损位**: 风险控制价格
+- **建议仓位**: 轻仓/中仓/重仓
+- **持有周期**: 预计持有天数
+
+如果不适合买入，请说明原因和后续关注点。
+
+### 5. 风险提示
+提示本次交易的主要风险点。
+"""
 
         return prompt
