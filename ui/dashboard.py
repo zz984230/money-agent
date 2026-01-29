@@ -515,7 +515,7 @@ def render_etf_analysis_page(etf_analyzer):
                     """, unsafe_allow_html=True)
 
 
-def render_convertible_analysis_page(cb_technical_analyzer):
+def render_convertible_analysis_page(cb_technical_analyzer, agent=None):
     """渲染可转债分析页面（包含子菜单）"""
     st.markdown('<div class="sub-header">🎫 可转债分析</div>', unsafe_allow_html=True)
 
@@ -526,7 +526,7 @@ def render_convertible_analysis_page(cb_technical_analyzer):
         render_convertible_overview_page(cb_technical_analyzer)
 
     with tab2:
-        render_convertible_factors_page()
+        render_convertible_factors_page(agent)
 
 
 @st.cache_data(ttl=3600)
@@ -541,7 +541,7 @@ def get_cached_convertible_by_industry(_fetcher, industry_name):
     return _fetcher.get_convertible_by_industry(industry_name)
 
 
-def render_convertible_factors_page():
+def render_convertible_factors_page(agent):
     """渲染可转债量化因子页面"""
 
     st.markdown("""
@@ -554,15 +554,19 @@ def render_convertible_factors_page():
     tab1, tab2 = st.tabs(["快速筛选", "行业探索"])
 
     with tab1:
-        render_medium_term_quick_screen()
+        render_medium_term_quick_screen(agent)
 
     with tab2:
         render_medium_term_industry_explore()
 
 
-def render_medium_term_quick_screen():
+def render_medium_term_quick_screen(agent):
     """渲染中期量化快速筛选页面"""
     st.subheader("快速筛选")
+
+    # 检查agent是否可用
+    if agent is None:
+        st.warning("⚠️ AI Agent 未连接，数据筛选功能可用，但AI分析将不可用")
 
     # 筛选参数配置
     with st.form("medium_term_screen_form"):
@@ -608,11 +612,18 @@ def render_medium_term_quick_screen():
         submitted = st.form_submit_button("开始筛选", use_container_width=True)
 
     if submitted:
-        # 获取分析器
-        agent = st.session_state.get('agent')
-        if not agent:
-            st.error("AI Agent未初始化")
-            return
+        # 如果没有agent，先创建一个用于数据筛选（AI分析会失败）
+        if agent is None:
+            try:
+                from core.agent.base_agent import BaseAgent
+                from unittest.mock import Mock
+
+                # 创建一个mock agent用于数据筛选
+                agent = Mock()
+                agent.chat = Mock(return_value="AI分析暂不可用（未配置API Key）")
+            except Exception as e:
+                st.error(f"无法初始化分析器: {str(e)}")
+                return
 
         try:
             from analysis.convertible_medium_term import ConvertibleBondMediumTermAnalyzer
@@ -946,7 +957,7 @@ def main():
         if cb_technical_analyzer is None:
             st.error("可转债分析模块未初始化，请检查配置！")
         else:
-            render_convertible_analysis_page(cb_technical_analyzer)
+            render_convertible_analysis_page(cb_technical_analyzer, agent)
 
 
 if __name__ == "__main__":
