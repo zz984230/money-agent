@@ -321,3 +321,64 @@ class TestConvertibleBondTechnicalAnalyzer:
         result = analyzer.analyze_terms('999999', stock_price=100.0)
 
         assert result is None
+
+    def test_screen_by_technical_price_filter(self, analyzer, monkeypatch):
+        """测试价格筛选"""
+        # Mock 可转债列表
+        mock_list = [
+            {'cb_code': '113001', 'cb_name': '平煤转债', 'price': 105, 'change': 2, 'amount': 50000000},
+            {'cb_code': '113002', 'cb_name': '神马转债', 'price': 115, 'change': 5, 'amount': 30000000},
+            {'cb_code': '113003', 'cb_name': '韦尔转债', 'price': 95, 'change': 1, 'amount': 100000000},
+        ]
+        monkeypatch.setattr(analyzer.fetcher, 'get_convertible_list', lambda: mock_list)
+
+        criteria = {
+            "price_range": (100, 110),
+            "premium_max": 15,
+        }
+
+        results = analyzer.screen_by_technical(criteria, top_n=10)
+
+        assert results is not None
+        assert len(results) == 1  # 只有平煤转债符合（价格105，涨跌幅2）
+        assert results[0]['cb_code'] == '113001'
+
+    def test_screen_by_technical_empty_result(self, analyzer, monkeypatch):
+        """测试无符合条件结果"""
+        monkeypatch.setattr(analyzer.fetcher, 'get_convertible_list', lambda: [])
+
+        results = analyzer.screen_by_technical({"price_range": (90, 110)})
+
+        assert results == []
+
+    def test_screen_by_technical_with_liquidity_filter(self, analyzer, monkeypatch):
+        """测试流动性筛选"""
+        mock_list = [
+            {'cb_code': '113001', 'cb_name': '平煤转债', 'price': 105, 'change': 2, 'amount': 50000000},  # 5000万
+            {'cb_code': '113004', 'cb_name': '隆基转债', 'price': 102, 'change': 3, 'amount': 150000000},  # 1.5亿
+        ]
+        monkeypatch.setattr(analyzer.fetcher, 'get_convertible_list', lambda: mock_list)
+
+        criteria = {
+            "price_range": (100, 110),
+            "liquidity_min": 100000000,  # 要求成交额 >= 1亿
+        }
+
+        results = analyzer.screen_by_technical(criteria, top_n=10)
+
+        assert len(results) == 1
+        assert results[0]['cb_code'] == '113004'  # 只有隆基转债符合流动性要求
+
+    def test_calculate_screen_score(self, analyzer):
+        """测试评分计算"""
+        cb = {
+            'price': 105,
+            'change': 5,
+            'amount': 80000000,  # 8000万
+        }
+        criteria = {"price_range": (100, 110)}
+
+        score = analyzer._calculate_screen_score(cb, criteria)
+
+        # 价格在范围内 +50分，溢价率-5分，流动性+10分
+        assert score == 55  # 50 - 5 + 10

@@ -611,3 +611,122 @@ class ConvertibleBondTechnicalAnalyzer:
         except Exception as e:
             logger.error(f"条款博弈分析失败 {cb_code}: {e}", exc_info=True)
             return None
+
+    def screen_by_technical(
+        self,
+        criteria: Dict[str, Any],
+        top_n: int = 20
+    ) -> Optional[List[Dict]]:
+        """
+        批量技术面筛选
+
+        Args:
+            criteria: 筛选条件
+                {
+                    "price_range": (90, 110),      # 价格区间
+                    "premium_max": 30,             # 最大溢价率（使用涨跌幅代替）
+                    "liquidity_min": 1000000,      # 最小流动性（成交额）
+                }
+            top_n: 返回前N个结果
+
+        Returns:
+            筛选结果列表，按综合评分排序，每个元素包含：
+            {
+                "cb_code": str,
+                "cb_name": str,
+                "price": float,
+                "premium": float,  # 溢价率（用涨跌幅代替）
+                "amount": float,
+                "score": float,
+            }
+        """
+        try:
+            logger.info(f"开始技术面筛选: {criteria}")
+
+            # 1. 获取可转债列表
+            cb_list = self.fetcher.get_convertible_list()
+
+            if not cb_list:
+                logger.warning("获取可转债列表为空")
+                return []
+
+            # 2. 应用筛选条件
+            filtered = []
+
+            for cb in cb_list:
+                # 提取数据
+                price = cb.get('price', 0)
+                premium = abs(cb.get('change', 0))  # 使用涨跌幅的绝对值作为溢价率代理
+                amount = cb.get('amount', 0)
+
+                # 筛选条件检查
+                if "price_range" in criteria:
+                    min_p, max_p = criteria["price_range"]
+                    if not (min_p <= price <= max_p):
+                        continue
+
+                if "premium_max" in criteria:
+                    if premium > criteria["premium_max"]:
+                        continue
+
+                if "liquidity_min" in criteria:
+                    if amount < criteria["liquidity_min"]:
+                        continue
+
+                # 计算综合评分
+                score = self._calculate_screen_score(cb, criteria)
+
+                filtered.append({
+                    "cb_code": cb.get('cb_code'),
+                    "cb_name": cb.get('cb_name'),
+                    "price": price,
+                    "premium": premium,
+                    "amount": amount,
+                    "score": score,
+                })
+
+            # 3. 按评分排序（降序）
+            filtered.sort(key=lambda x: x['score'], reverse=True)
+
+            # 4. 返回前N个
+            result = filtered[:top_n]
+
+            logger.info(f"技术面筛选完成，找到 {len(result)} 只转债")
+            return result
+
+        except Exception as e:
+            logger.error(f"技术面筛选失败: {e}", exc_info=True)
+            return None
+
+    def _calculate_screen_score(self, cb: Dict, criteria: Dict) -> float:
+        """
+        计算筛选评分
+
+        Args:
+            cb: 可转债数据字典
+            criteria: 筛选条件（用于判断价格是否在目标范围内）
+
+        Returns:
+            综合评分（越高越好）
+        """
+        score = 0.0
+
+        # 价格在目标范围内加分
+        price = cb.get('price', 100)
+        if "price_range" in criteria:
+            min_p, max_p = criteria["price_range"]
+            if min_p <= price <= max_p:
+                score += 50  # 价格符合条件，基础分50
+
+        # 溢价率越低越好（扣分）
+        premium = abs(cb.get('change', 0))
+        score -= premium
+
+        # 流动性加分
+        amount = cb.get('amount', 0)
+        if amount > 100000000:  # 1亿成交额
+            score += 20
+        elif amount > 50000000:  # 5000万
+            score += 10
+
+        return score
