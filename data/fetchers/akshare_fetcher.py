@@ -593,6 +593,87 @@ class AKShareFetcher:
             logger.error(f"获取行业列表失败: {e}", exc_info=True)
             return []
 
+    def get_convertible_by_industry(self, industry_name: str) -> List[Dict]:
+        """
+        获取指定行业的可转债列表
+
+        Args:
+            industry_name: 行业名称（如 "电子"）
+
+        Returns:
+            该行业内的可转债列表，每个元素包含 cb_code, cb_name, stock_code
+        """
+        try:
+            logger.debug(f"开始获取行业 '{industry_name}' 的可转债列表")
+
+            # 获取所有可转债
+            all_bonds = self.get_convertible_list()
+            if not all_bonds:
+                return []
+
+            # 获取行业内股票列表
+            industry_stocks = self.get_stock_by_industry(industry_name)
+            if not industry_stocks:
+                logger.warning(f"行业 '{industry_name}' 中没有找到股票")
+                return []
+
+            # 提取行业股票代码集合
+            stock_codes = {s.get('代码', '') for s in industry_stocks}
+
+            # 筛选属于该行业的可转债
+            result = []
+            for bond in all_bonds:
+                stock_code = bond.get('正股代码', '')
+                if stock_code in stock_codes:
+                    result.append({
+                        'cb_code': bond.get('代码'),
+                        'cb_name': bond.get('转债名称'),
+                        'stock_code': stock_code,
+                        'stock_name': bond.get('正股名称', ''),
+                    })
+
+            logger.info(f"行业 '{industry_name}' 中找到 {len(result)} 只可转债")
+            return result
+
+        except Exception as e:
+            logger.error(f"获取行业 '{industry_name}' 可转债失败: {e}", exc_info=True)
+            return []
+
+    def get_stock_by_industry(self, industry_name: str) -> List[Dict]:
+        """
+        获取指定行业的股票列表
+
+        Args:
+            industry_name: 行业名称
+
+        Returns:
+            该行业内的股票列表
+        """
+        try:
+            logger.debug(f"开始获取行业 '{industry_name}' 的股票列表")
+
+            # 获取行业板块成分股
+            df = ak.stock_board_industry_cons_em(symbol=industry_name)
+
+            if df is None or df.empty:
+                logger.warning(f"获取行业 '{industry_name}' 股票列表失败：返回数据为空")
+                return []
+
+            # 转换为字典列表
+            result = []
+            for _, row in df.iterrows():
+                result.append({
+                    '代码': str(row.get('代码', '')),
+                    '名称': str(row.get('名称', '')),
+                })
+
+            logger.info(f"行业 '{industry_name}' 中找到 {len(result)} 只股票")
+            return result
+
+        except Exception as e:
+            logger.error(f"获取行业 '{industry_name}' 股票列表失败: {e}", exc_info=True)
+            return []
+
     def calculate_indicators(
         self,
         history_df: pd.DataFrame

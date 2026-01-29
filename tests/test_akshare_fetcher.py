@@ -407,3 +407,47 @@ class TestAKShareFetcherIndustryData:
         assert isinstance(industries[0], dict)
         assert 'industry_code' in industries[0] or 'name' in industries[0]
         mock_industry_list.assert_called_once()
+
+    @patch('akshare.stock_board_industry_cons_em')
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_by_industry(self, mock_bond_cb_jsl, mock_industry_cons, fetcher):
+        """测试获取行业内可转债列表"""
+        # Mock行业内股票列表
+        mock_stocks = pd.DataFrame({
+            '代码': ['600000', '600004', '600006'],
+            '名称': ['浦发银行', '白云机场', '东风汽车'],
+        })
+        mock_industry_cons.return_value = mock_stocks
+
+        # Mock可转债列表
+        mock_bonds = pd.DataFrame({
+            '代码': ['110001', '110002'],
+            '转债名称': ['测试转债1', '测试转债2'],
+            '正股代码': ['600000', '600004'],
+            '正股名称': ['浦发银行', '白云机场'],
+        })
+        mock_bond_cb_jsl.return_value = mock_bonds
+
+        bonds = fetcher.get_convertible_by_industry("电子")
+
+        assert bonds is not None
+        assert isinstance(bonds, list)
+        # 行业中应该有可转债
+        if len(bonds) > 0:
+            assert 'cb_code' in bonds[0]
+            assert 'cb_name' in bonds[0]
+
+    @patch('akshare.stock_board_industry_cons_em')
+    def test_get_stock_by_industry(self, mock_industry_cons, fetcher):
+        """测试获取行业内正股列表"""
+        # Mock行业内股票列表
+        mock_stocks = pd.DataFrame({
+            '代码': ['600000', '600004', '600006'],
+            '名称': ['浦发银行', '白云机场', '东风汽车'],
+        })
+        mock_industry_cons.return_value = mock_stocks
+
+        stocks = fetcher.get_stock_by_industry("电子")
+
+        assert stocks is not None
+        assert isinstance(stocks, list)
