@@ -121,3 +121,56 @@ def test_get_convertible_daily(mock_bond_cb_hist):
     assert 'close' in df.columns
     assert df['date'].dtype == 'datetime64[ns]'
     mock_bond_cb_hist.assert_called_once_with(symbol="113527")
+
+
+class TestAKShareFetcherConvertible:
+    """测试可转债数据获取"""
+
+    @pytest.fixture
+    def fetcher(self):
+        return AKShareFetcher()
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_detail_success(self, mock_bond_cb_jsl, fetcher):
+        """测试成功获取可转债详细信息"""
+        # Mock AKShare返回数据 - 使用实际的数据结构
+        # 列：代码, 转债名称, 现价, 涨跌幅, 正股代码, 正股名称, 正股价, 正股涨跌, 正股PB, 转股价, 转股价值, 转股溢价率, 债券评级, 回售触发价, 强赎触发价
+        mock_df = pd.DataFrame({
+            '代码': ['113527'],
+            '转债名称': ['利民转债'],
+            '现价': [105.5],
+            '涨跌幅': [0.5],
+            '正股代码': ['603798'],
+            '正股名称': ['利民股份'],
+            '正股价': [10.5],
+            '正股涨跌': [1.2],
+            '正股PB': [2.5],
+            '转股价': [15.0],
+            '转股价值': [100.5],
+            '转股溢价率': [5.0],
+            '债券评级': ['AA-'],
+            '回售触发价': [90],
+            '强赎触发价': [130],
+        })
+        mock_bond_cb_jsl.return_value = mock_df
+
+        result = fetcher.get_convertible_detail('113527')
+
+        assert result is not None
+        assert result['cb_code'] == '113527'
+        assert result['cb_name'] == '利民转债'
+        assert result['put_trigger_price'] == 90
+        assert result['call_trigger_price'] == 130
+        assert result['conversion_price'] == 15.0
+        assert result['stock_code'] == '603798'
+        assert result['stock_name'] == '利民股份'
+
+    @patch('akshare.bond_cb_jsl')
+    def test_get_convertible_detail_not_found(self, mock_bond_cb_jsl, fetcher):
+        """测试转债不存在的情况"""
+        mock_df = pd.DataFrame()
+        mock_bond_cb_jsl.return_value = mock_df
+
+        result = fetcher.get_convertible_detail('999999')
+
+        assert result is None

@@ -2,6 +2,5 @@
 
 from .akshare_fetcher import AKShareFetcher
 from .akshare_financial_fetcher import AKShareFinancialFetcher
-from .tushare_fetcher import TushareFetcher
 
-__all__ = ['AKShareFetcher', 'AKShareFinancialFetcher', 'TushareFetcher']
+__all__ = ['AKShareFetcher', 'AKShareFinancialFetcher']

@@ -1,6 +1,10 @@
 import akshare as ak
 import pandas as pd
+import logging
 from typing import List, Dict, Optional
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class AKShareFetcher:
@@ -181,4 +185,60 @@ class AKShareFetcher:
             }
 
         except Exception:
+            return None
+
+    def get_convertible_detail(self, cb_code: str) -> Optional[Dict]:
+        """
+        获取单个可转债详细信息
+
+        Args:
+            cb_code: 可转债代码（6位数字）
+
+        Returns:
+            包含条款、评级等信息的字典，如果获取失败返回None
+        """
+        try:
+            import akshare as ak
+
+            logger.debug(f"开始获取可转债 {cb_code} 的详细信息")
+
+            # 获取可转债列表
+            df = ak.bond_cb_jsl()
+
+            if df is None or df.empty:
+                logger.warning("获取可转债列表失败：返回数据为空")
+                return None
+
+            # 查找对应代码的可转债
+            matching = df[df.iloc[:, 0].astype(str) == cb_code]
+
+            if matching.empty:
+                logger.warning(f"未找到可转债 {cb_code}")
+                return None
+
+            # 提取第一行数据
+            row = matching.iloc[0]
+
+            # 构建返回字典（使用位置索引访问列）
+            result = {
+                "cb_code": cb_code,
+                "cb_name": str(row.iloc[1]) if len(row) > 1 else "",
+                "price": float(row.iloc[2]) if len(row) > 2 else 0.0,
+                "stock_code": str(row.iloc[4]) if len(row) > 4 else "",
+                "stock_name": str(row.iloc[5]) if len(row) > 5 else "",
+            }
+
+            # 添加条款信息（如果存在）
+            if len(row) > 13 and row.iloc[13] is not None:
+                result["put_trigger_price"] = float(row.iloc[13])
+            if len(row) > 14 and row.iloc[14] is not None:
+                result["call_trigger_price"] = float(row.iloc[14])
+            if len(row) > 9 and row.iloc[9] is not None:
+                result["conversion_price"] = float(row.iloc[9])
+
+            logger.debug(f"成功获取可转债 {cb_code} 的详细信息")
+            return result
+
+        except Exception as e:
+            logger.error(f"获取可转债 {cb_code} 详情失败: {e}", exc_info=True)
             return None
