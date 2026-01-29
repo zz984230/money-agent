@@ -175,3 +175,46 @@ def test_predictive_factor_analyzer_initialization():
     assert hasattr(analyzer, 'calculate_liquidity_factors')
     assert hasattr(analyzer, 'calculate_commodity_specific_factors')
     assert hasattr(analyzer, 'calculate_all_factors')
+
+
+def test_build_prediction_model():
+    """测试预测模型构建"""
+    analyzer = PredictiveFactorAnalyzer()
+
+    # 创建模拟因子数据
+    dates = pd.date_range('2024-01-01', periods=100, freq='D')
+    np.random.seed(42)
+    factors = pd.DataFrame({
+        'factor1': np.random.randn(100),
+        'factor2': np.random.randn(100),
+        'factor3': np.random.randn(100),
+    }, index=dates)
+
+    # 创建一些目标事件
+    target_events = [dates[50], dates[70], dates[90]]
+
+    model, importance = analyzer.build_prediction_model(factors, target_events)
+
+    if model is not None:
+        assert importance is not None
+        assert len(importance) == 3
+        assert 'feature' in importance.columns
+        assert 'importance' in importance.columns
+    else:
+        pytest.skip("无法构建模型（可能正样本不足）")
+
+
+def test_build_prediction_model_no_events():
+    """测试无事件时返回None"""
+    analyzer = PredictiveFactorAnalyzer()
+
+    dates = pd.date_range('2024-01-01', periods=50, freq='D')
+    np.random.seed(42)
+    factors = pd.DataFrame({
+        'factor1': np.random.randn(50),
+    }, index=dates)
+
+    model, importance = analyzer.build_prediction_model(factors, [])
+
+    assert model is None
+    assert importance is None

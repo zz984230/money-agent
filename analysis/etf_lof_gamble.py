@@ -262,3 +262,86 @@ class PredictiveFactorAnalyzer:
         all_factors = pd.concat([tech_factors, liq_factors, commodity_factors], axis=1)
 
         return all_factors
+
+    def build_prediction_model(
+        self,
+        factors: pd.DataFrame,
+        target_events: List[pd.Timestamp],
+        lookback_days: int = 1
+    ) -> tuple:
+        """
+        构建预测模型
+
+        Args:
+            factors: 因子DataFrame
+            target_events: 突增突降事件日期列表
+            lookback_days: 事件前观察天数
+
+        Returns:
+            (model, feature_importance) 或 (None, None)
+        """
+        if len(factors) == 0 or len(target_events) == 0:
+            return None, None
+
+        # 创建标签
+        labels = pd.Series(0, index=factors.index)
+        for event_date in target_events:
+            if event_date in factors.index:
+                # 找到事件前N天的索引
+                event_idx = factors.index.get_loc(event_date)
+                if event_idx >= lookback_days:
+                    pred_idx = event_idx - lookback_days
+                    labels.iloc[pred_idx] = 1
+
+        # 对齐数据，删除NaN
+        aligned_data = pd.concat([factors, labels], axis=1)
+        aligned_data.columns = list(factors.columns) + ['label']
+        aligned_data = aligned_data.dropna()
+
+        if len(aligned_data) == 0 or aligned_data['label'].sum() == 0:
+            logger.warning("没有足够的正样本构建模型")
+            return None, None
+
+        # 特征和标签
+        X = aligned_data.iloc[:, :-1]
+        y = aligned_data['label']
+
+        # 检查正负样本比例
+        pos_count = y.sum()
+        neg_count = len(y) - pos_count
+        logger.info(f"正样本: {pos_count}, 负样本: {neg_count}")
+
+        try:
+            from sklearn.model_selection import train_test_split
+            from sklearn.ensemble import RandomForestClassifier
+
+            # 划分训练测试集
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=42, stratify=y
+            )
+
+            # 训练模型
+            clf = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            clf.fit(X_train, y_train)
+
+            # 计算特征重要性
+            feature_importance = pd.DataFrame({
+                'feature': X.columns,
+                'importance': clf.feature_importances_
+            }).sort_values('importance', ascending=False)
+
+            # 记录模型性能
+            train_score = clf.score(X_train, y_train)
+            test_score = clf.score(X_test, y_test)
+            logger.info(f"模型训练准确率: {train_score:.3f}, 测试准确率: {test_score:.3f}")
+
+            return clf, feature_importance
+
+        except Exception as e:
+            logger.error(f"构建预测模型失败: {e}")
+            return None, None
