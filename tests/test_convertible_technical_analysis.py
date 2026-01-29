@@ -276,3 +276,48 @@ class TestConvertibleBondTechnicalAnalyzer:
         assert data.cb_code == "113527"
         # 应该使用默认值
         assert data.ma5 == 0.0
+
+    def test_analyze_terms_call_trigger(self, analyzer, monkeypatch):
+        """测试强赎条款触发分析"""
+        # Mock fetcher.get_convertible_detail 返回转债详情
+        monkeypatch.setattr(analyzer.fetcher, 'get_convertible_detail',
+                           lambda x: {
+                               'cb_code': '113527',
+                               'cb_name': '利民转债',
+                               'call_trigger_price': 130.0,
+                               'put_trigger_price': 90.0,
+                               'conversion_price': 100.0,
+                           })
+
+        # 正股价超过强赎触发价
+        result = analyzer.analyze_terms('113527', stock_price=135.0, stock_name='利民股份')
+
+        assert result is not None
+        assert result['cb_code'] == '113527'
+        assert '强赎' in result['full_analysis'] or 'call_distance' in result
+        assert result['call_distance'] > 0  # 应该是正数（超过触发价）
+
+    def test_analyze_terms_put_trigger(self, analyzer, monkeypatch):
+        """测试回售条款触发分析"""
+        monkeypatch.setattr(analyzer.fetcher, 'get_convertible_detail',
+                           lambda x: {
+                               'cb_code': '113527',
+                               'cb_name': '利民转债',
+                               'call_trigger_price': 130.0,
+                               'put_trigger_price': 90.0,
+                               'conversion_price': 100.0,
+                           })
+
+        # 正股价低于回售触发价
+        result = analyzer.analyze_terms('113527', stock_price=85.0, stock_name='利民股份')
+
+        assert result is not None
+        assert result['put_distance'] < 0  # 应该是负数（低于触发价）
+
+    def test_analyze_terms_not_found(self, analyzer, monkeypatch):
+        """测试转债不存在的情况"""
+        monkeypatch.setattr(analyzer.fetcher, 'get_convertible_detail', lambda x: None)
+
+        result = analyzer.analyze_terms('999999', stock_price=100.0)
+
+        assert result is None

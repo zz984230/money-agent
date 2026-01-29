@@ -498,3 +498,116 @@ class ConvertibleBondTechnicalAnalyzer:
             lines.append(f"卖一价: {data.ask_price[0]:.2f}" if len(data.ask_price) > 0 else "")
 
         return "\n".join(lines) if lines else "暂无技术数据"
+
+    def analyze_terms(
+        self,
+        cb_code: str,
+        stock_price: float,
+        stock_name: str = ""
+    ) -> Optional[Dict]:
+        """
+        条款博弈分析
+
+        Args:
+            cb_code: 可转债代码
+            stock_price: 正股当前价格
+            stock_name: 正股名称
+
+        Returns:
+            包含条款分析结果的字典：
+            {
+                "cb_code": str,
+                "cb_name": str,
+                "stock_price": float,
+                "stock_name": str,
+                "call_trigger_price": float,
+                "put_trigger_price": float,
+                "conversion_price": float,
+                "call_distance": float,    # 距强赎触发的距离（百分比）
+                "put_distance": float,     # 距回售触发的距离（百分比）
+                "conversion_distance": float,  # 距转股价的距离（百分比）
+                "full_analysis": str,      # AI完整分析
+            }
+            如果获取失败返回 None
+        """
+        try:
+            logger.info(f"开始条款博弈分析: {cb_code}")
+
+            # 1. 获取转债详情
+            detail = self.fetcher.get_convertible_detail(cb_code)
+
+            if not detail:
+                logger.warning(f"无法获取转债 {cb_code} 详情")
+                return None
+
+            # 2. 提取条款价格
+            call_price = detail.get('call_trigger_price', 0)
+            put_price = detail.get('put_trigger_price', 0)
+            conversion_price = detail.get('conversion_price', 0)
+
+            # 3. 计算距离各条款触发的距离（百分比）
+            call_distance = (stock_price / call_price - 1) * 100 if call_price > 0 else 0
+            put_distance = (stock_price / put_price - 1) * 100 if put_price > 0 else 0
+            conversion_distance = (stock_price / conversion_price - 1) * 100 if conversion_price > 0 else 0
+
+            # 4. 构建AI分析提示词
+            # 注意：build_convertible_terms_prompt 将在任务 10 中实现
+            # 这里先使用简单的提示词
+            prompt = f"""请分析以下可转债的条款博弈情况：
+
+【转债信息】
+{detail.get('cb_name', '')} ({cb_code})
+
+【正股信息】
+{stock_name}
+当前股价：{stock_price}元
+
+【条款触发分析】
+强赎条款：
+  - 触发价：{call_price}元
+  - 当前距离：{call_distance:.2f}%
+  - 状态：{'已触发' if stock_price >= call_price else '未触发'}
+
+回售条款：
+  - 触发价：{put_price}元
+  - 当前距离：{put_distance:.2f}%
+  - 状态：{'已触发' if stock_price <= put_price else '未触发'}
+
+下修条款：
+  - 转股价：{conversion_price}元
+  - 当前距离转股价：{conversion_distance:.2f}%
+
+请分析：
+1. 各条款的触发可能性和时间窗口
+2. 发行人可能的应对策略（强赎、下修、不行使权利）
+3. 投资者的应对策略和风险收益分析
+4. 给出具体的操作建议"""
+
+            # 5. AI分析
+            analysis = self.agent.chat(prompt)
+
+            if not analysis:
+                logger.warning("AI条款分析失败")
+                return None
+
+            # 6. 构建返回结果
+            result = {
+                "cb_code": cb_code,
+                "cb_name": detail.get('cb_name', ''),
+                "stock_price": stock_price,
+                "stock_name": stock_name,
+                "call_trigger_price": call_price,
+                "put_trigger_price": put_price,
+                "conversion_price": conversion_price,
+                "call_distance": call_distance,
+                "put_distance": put_distance,
+                "conversion_distance": conversion_distance,
+                "full_analysis": analysis,
+            }
+
+            logger.info(f"条款博弈分析完成: {cb_code}")
+            return result
+
+        except Exception as e:
+            logger.error(f"条款博弈分析失败 {cb_code}: {e}", exc_info=True)
+            return None
