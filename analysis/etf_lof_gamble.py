@@ -123,3 +123,71 @@ class VolatilityDetector:
         }
 
         return results
+
+
+class PredictiveFactorAnalyzer:
+    """预测因子分析器"""
+
+    def __init__(self):
+        self.factors = {}
+
+    def calculate_technical_factors(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        计算技术因子
+
+        Args:
+            df: DataFrame，必须包含 close, high, low, volume 列
+
+        Returns:
+            因子DataFrame，索引与df相同
+        """
+        factors = pd.DataFrame(index=df.index)
+
+        # 价格动量因子
+        factors['momentum_5'] = df['close'].pct_change(5)
+        factors['momentum_10'] = df['close'].pct_change(10)
+        factors['momentum_20'] = df['close'].pct_change(20)
+
+        # 波动率因子
+        factors['volatility_20'] = df['close'].pct_change().rolling(20).std()
+
+        # ATR (Average True Range)
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        factors['atr_14'] = true_range.rolling(14).mean()
+
+        # 成交量因子
+        if 'volume' in df.columns:
+            factors['volume_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+            factors['volume_ma_5'] = df['volume'].rolling(5).mean() / df['volume'].rolling(20).mean()
+
+        # RSI (Relative Strength Index)
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        factors['rsi_14'] = 100 - (100 / (1 + rs))
+
+        # MACD
+        ema_12 = df['close'].ewm(span=12).mean()
+        ema_26 = df['close'].ewm(span=26).mean()
+        factors['macd'] = ema_12 - ema_26
+
+        # 布林带带宽
+        sma_20 = df['close'].rolling(20).mean()
+        std_20 = df['close'].rolling(20).std()
+        upper_band = sma_20 + 2 * std_20
+        lower_band = sma_20 - 2 * std_20
+        factors['bollinger_bandwidth'] = (upper_band - lower_band) / sma_20
+
+        # 价量背离
+        price_change = df['close'].pct_change(5)
+        if 'volume' in df.columns:
+            volume_change = df['volume'].pct_change(5)
+            factors['pv_divergence'] = price_change - volume_change
+        else:
+            factors['pv_divergence'] = price_change
+
+        return factors

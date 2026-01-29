@@ -4,7 +4,7 @@ ETF/LOF投机异常波动分析模块测试
 import pytest
 import pandas as pd
 import numpy as np
-from analysis.etf_lof_gamble import VolatilityDetector, AbnormalEvent
+from analysis.etf_lof_gamble import VolatilityDetector, AbnormalEvent, PredictiveFactorAnalyzer
 
 
 def test_detect_sudden_moves_no_abnormal():
@@ -103,3 +103,40 @@ def test_abnormal_event_dataclass():
     assert event.end_price == 118.0
     assert event.volatility == 0.12
     assert event.window == 3
+
+
+def test_calculate_technical_factors():
+    """测试技术因子计算"""
+    analyzer = PredictiveFactorAnalyzer()
+
+    # 创建测试数据
+    dates = pd.date_range('2024-01-01', periods=100, freq='D')
+    np.random.seed(42)
+    df = pd.DataFrame({
+        'close': [100 + i * 0.1 + np.random.randn() * 2 for i in range(100)],
+        'high': [102 + i * 0.1 + np.random.randn() * 2 for i in range(100)],
+        'low': [98 + i * 0.1 + np.random.randn() * 2 for i in range(100)],
+        'volume': [1000000 + np.random.randn() * 100000 for i in range(100)]
+    }, index=dates)
+
+    factors = analyzer.calculate_technical_factors(df)
+
+    # 检查因子是否存在
+    expected_factors = [
+        'momentum_5', 'momentum_10', 'momentum_20',
+        'volatility_20', 'atr_14', 'volume_ratio',
+        'volume_ma_5', 'rsi_14', 'macd', 'bollinger_bandwidth',
+        'pv_divergence'
+    ]
+
+    for factor in expected_factors:
+        assert factor in factors.columns
+
+    # 检查索引一致
+    assert len(factors) == len(df)
+
+    # 检查RSI范围（0-100）
+    rsi_values = factors['rsi_14'].dropna()
+    if len(rsi_values) > 0:
+        assert rsi_values.max() <= 100
+        assert rsi_values.min() >= 0
