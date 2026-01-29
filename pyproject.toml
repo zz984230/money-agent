@@ -48,6 +48,11 @@ dev-dependencies = [
     "pytest-cov>=4.0.0",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests (require real API keys)"
+]
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"

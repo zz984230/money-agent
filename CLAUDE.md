@@ -66,7 +66,8 @@ money-agent/
 │   ├── screening.py     # Stock screening by financial metrics
 │   ├── market_analysis.py  # Market index analysis
 │   ├── etf_analysis.py  # ETF analysis and recommendations
-│   └── convertible_analysis.py  # Convertible bond analysis (double-low strategy)
+│   ├── convertible_analysis.py  # Convertible bond analysis (double-low strategy)
+│   └── convertible_technical_analysis.py  # Convertible bond technical analysis
 ├── config/              # Configuration
 │   └── settings.py      # Pydantic settings (reads from .env)
 └── ui/                  # Presentation layer
@@ -84,6 +85,7 @@ money-agent/
    - `MarketAnalyzer(agent)` analyzes market indices
    - `ETFAnalyzer(agent)` provides ETF analysis/recommendations
    - `ConvertibleBondAnalyzer(agent)` analyzes convertible bonds
+   - `ConvertibleBondTechnicalAnalyzer(agent)` analyzes convertible bond technical indicators
 
 4. **Data Fetcher Pattern**: `AKShareFetcher` provides methods for all data types. It normalizes column names from Chinese to English via `COLUMN_MAPPING`.
 
@@ -114,6 +116,47 @@ Optional settings in `.env`:
 - **Market Analysis**: Analyzes indices (Shanghai, CSI 300, CSI 500, Shenzhen, ChiNext). Provides sentiment analysis.
 - **ETF Analysis**: Single ETF analysis + category-based recommendations (宽基/行业/债券/商品/跨境)
 - **Convertible Bonds**: Single bond analysis + "double-low" strategy (low price + low premium rate screening)
+
+### 可转债技术面分析模块
+
+位于 `analysis/convertible_technical_analysis.py`
+
+**核心功能:**
+- `analyze_technical()` - 单券技术面深度分析
+- `analyze_terms()` - 条款博弈分析
+- `screen_by_technical()` - 批量筛选
+
+**使用示例:**
+```python
+from core.agent.glm_agent import GLMAgent
+from analysis.convertible_technical_analysis import ConvertibleBondTechnicalAnalyzer
+
+agent = GLMAgent()
+analyzer = ConvertibleBondTechnicalAnalyzer(agent)
+
+# 技术面分析
+result = analyzer.analyze_technical('113527')
+
+# 条款博弈分析
+terms = analyzer.analyze_terms('113527', stock_price=125.0)
+
+# 批量筛选
+results = analyzer.screen_by_technical({"price_range": (100, 110)})
+```
+
+**数据获取扩展:**
+- `get_convertible_detail()` - 获取单个转债详细信息
+- `get_convertible_realtime()` - 获取实时行情
+- `get_convertible_history()` - 获取历史价格数据
+- `calculate_indicators()` - 计算技术指标（MA5, MA20, 波动率）
+
+**分析维度:**
+1. 定位判断：偏股型/平衡型/偏债型
+2. 估值分析：价格、溢价率、YTM评估
+3. 动能分析：价格趋势、成交量、波动率
+4. 条款博弈：强赎、回售、下修触发分析
+5. 流动性分析：成交额评估
+6. 投资建议：买入/持有/卖出
 
 ### Streamlit Dashboard
 

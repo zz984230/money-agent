@@ -382,3 +382,59 @@ class TestConvertibleBondTechnicalAnalyzer:
 
         # 价格在范围内 +50分，溢价率-5分，流动性+10分
         assert score == 55  # 50 - 5 + 10
+
+
+@pytest.mark.integration
+class TestConvertibleTechnicalIntegration:
+    """集成测试（需要真实API）"""
+
+    def test_full_analysis_pipeline(self):
+        """测试完整的分析流程"""
+        from core.agent.glm_agent import GLMAgent
+
+        agent = GLMAgent()
+        analyzer = ConvertibleBondTechnicalAnalyzer(agent)
+
+        # 使用真实转债代码进行测试
+        result = analyzer.analyze_technical('113527')
+
+        assert result is not None
+        assert result.cb_code == '113527'
+        assert len(result.analysis) > 0
+        assert isinstance(result.technical_data, ConvertibleTechnicalData)
+
+    def test_terms_analysis_pipeline(self):
+        """测试条款博弈分析流程"""
+        from core.agent.glm_agent import GLMAgent
+
+        agent = GLMAgent()
+        analyzer = ConvertibleBondTechnicalAnalyzer(agent)
+
+        # 测试条款博弈分析
+        result = analyzer.analyze_terms(
+            cb_code='113527',
+            stock_price=125.0,
+            stock_name='利民股份'
+        )
+
+        assert result is not None
+        assert result['cb_code'] == '113527'
+        assert 'call_distance' in result
+        assert 'full_analysis' in result
+
+    def test_screening_pipeline(self):
+        """测试批量筛选流程"""
+        from core.agent.glm_agent import GLMAgent
+
+        agent = GLMAgent()
+        analyzer = ConvertibleBondTechnicalAnalyzer(agent)
+
+        # 测试批量筛选
+        results = analyzer.screen_by_technical(
+            criteria={"price_range": (100, 110), "premium_max": 20},
+            top_n=5
+        )
+
+        assert results is not None
+        assert len(results) <= 5
+        assert all('cb_code' in r for r in results)
