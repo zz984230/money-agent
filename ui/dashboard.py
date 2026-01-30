@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Callable, Optional
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
@@ -987,37 +987,50 @@ def render_abnormal_screening_page(gamble_analyzer):
         st.dataframe(criteria_df, use_container_width=True, hide_index=True)
 
         # 执行筛选
-        with st.spinner("正在筛选分析，请稍候..."):
-            try:
-                results = screen_and_analyze_with_mode(
-                    gamble_analyzer, criteria, top_n, scan_mode
-                )
+        # 创建进度占位符
+        progress_placeholder = st.empty()
 
-                if results:
-                    st.markdown(f"""
-                    <div class="success-box">
-                        <h4>筛选完成！找到 {len(results)} 个异常波动标的</h4>
-                    </div>
-                    """, unsafe_allow_html=True)
+        with progress_placeholder.container():
+            progress_bar = st.progress(0, text="准备开始筛选...")
 
-                    # 显示结果列表
-                    display_screening_results(results)
+        try:
+            # 定义进度回调函数
+            def update_progress(progress: float, message: str):
+                progress_bar.progress(progress, text=message)
 
-                else:
-                    st.markdown("""
-                    <div class="warning-box">
-                        <h4>未找到符合条件的标的</h4>
-                        <p>请尝试调整筛选条件...</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+            results = screen_and_analyze_with_mode(
+                gamble_analyzer, criteria, top_n, scan_mode, progress_callback=update_progress
+            )
 
-            except Exception as e:
+            # 清除进度条
+            progress_placeholder.empty()
+
+            if results:
                 st.markdown(f"""
-                <div class="error-box">
-                    <h4>筛选失败</h4>
-                    <p>错误信息: {str(e)}</p>
+                <div class="success-box">
+                    <h4>筛选完成！找到 {len(results)} 个异常波动标的</h4>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # 显示结果列表
+                display_screening_results(results)
+
+            else:
+                st.markdown("""
+                <div class="warning-box">
+                    <h4>未找到符合条件的标的</h4>
+                    <p>请尝试调整筛选条件...</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+        except Exception as e:
+            progress_placeholder.empty()
+            st.markdown(f"""
+            <div class="error-box">
+                <h4>筛选失败</h4>
+                <p>错误信息: {str(e)}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def display_screening_results(results):
@@ -1358,7 +1371,7 @@ def cached_get_fund_list(_fetcher, fund_type: str, _force_refresh: bool = False)
         return []
 
 
-def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str) -> List:
+def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, progress_callback: Optional[Callable[[float, str], None]] = None) -> List:
     """
     根据筛选模式执行分析
 
@@ -1367,6 +1380,7 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
         criteria: 筛选条件
         top_n: 返回数量
         scan_mode: 'use_cache'（使用缓存）或 'rescan'（重新扫描）
+        progress_callback: 进度回调函数，接收 (progress: float, message: str)
 
     Returns:
         分析结果列表
@@ -1381,7 +1395,10 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
     target_list = []
     if scan_mode == 'rescan':
         # 重新扫描模式：使用时间戳绕过缓存，强制重新获取
-        st.info("🔄 正在重新扫描基金列表...")
+        if progress_callback:
+            progress_callback(0.0, "🔄 正在重新扫描基金列表...")
+        else:
+            st.info("🔄 正在重新扫描基金列表...")
         refresh_token = time.time()  # 使用时间戳作为唯一标识
         for fund_type in fund_types:
             # 传入刷新令牌绕过缓存
@@ -1389,17 +1406,20 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
             target_list.extend(fund_list)
     else:
         # 使用缓存模式：直接从缓存获取
-        st.info("💾 使用缓存的基金列表...")
+        if progress_callback:
+            progress_callback(0.0, "💾 使用缓存的基金列表...")
+        else:
+            st.info("💾 使用缓存的基金列表...")
         for fund_type in fund_types:
             fund_list = cached_get_fund_list(fetcher, fund_type)
             target_list.extend(fund_list)
 
     # 使用分析器的内部逻辑进行筛选和深度分析
     # 这里复用 screen_and_analyze 的逻辑，但传入已获取的 target_list
-    return _screen_and_analyze_with_targets(_analyzer, target_list, criteria, top_n)
+    return _screen_and_analyze_with_targets(_analyzer, target_list, criteria, top_n, progress_callback)
 
 
-def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int) -> List:
+def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int, progress_callback: Optional[Callable[[float, str], None]] = None) -> List:
     """
     使用给定的目标列表进行筛选分析（内部函数）
 
@@ -1408,6 +1428,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
         target_list: 预先获取的基金列表
         criteria: 筛选条件
         top_n: 返回数量
+        progress_callback: 进度回调函数，接收 (progress: float, message: str)
 
     Returns:
         分析结果列表
@@ -1425,8 +1446,13 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     logger.info(f"开始筛选分析，使用{len(target_list)}个目标标的，阈值={threshold*100}%")
 
     # 快速筛选：检测异常波动
+    if progress_callback:
+        progress_callback(0.1, f"📊 正在筛选 {len(target_list[:top_n * 3])} 个标的...")
+
     screened = []
-    for item in target_list[:top_n * 3]:
+    total_to_scan = len(target_list[:top_n * 3])
+
+    for idx, item in enumerate(target_list[:top_n * 3]):
         symbol = item['code']
         name = item['name']
         fund_type = item['type']
@@ -1454,6 +1480,11 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
                     'recent_change': df['close'].pct_change(windows[0]).iloc[-1]
                 })
 
+            # 更新进度（筛选阶段占40%）
+            if progress_callback and total_to_scan > 0:
+                progress = 0.1 + (idx + 1) / total_to_scan * 0.4
+                progress_callback(progress, f"📊 筛选进度: {idx + 1}/{total_to_scan} ({len(screened)} 个候选)")
+
         except Exception as e:
             logger.error(f"筛选 {symbol} 失败: {e}")
             continue
@@ -1464,10 +1495,18 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
 
     logger.info(f"筛选出 {len(top_targets)} 个目标进行深度分析")
 
+    if progress_callback:
+        progress_callback(0.5, f"🔍 开始深度分析 {len(top_targets)} 个候选标的...")
+
     # 深度分析
     results = []
-    for target in top_targets:
+    for idx, target in enumerate(top_targets):
         try:
+            # 更新进度（深度分析阶段占50%）
+            if progress_callback and len(top_targets) > 0:
+                progress = 0.5 + (idx + 1) / len(top_targets) * 0.5
+                progress_callback(progress, f"🤖 AI分析进度: {idx + 1}/{len(top_targets)} - {target['name']}")
+
             result = _analyzer.analyze_single(
                 target['symbol'],
                 target['name'],
@@ -1479,6 +1518,9 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
         except Exception as e:
             logger.error(f"分析 {target['symbol']} 失败: {e}")
             continue
+
+    if progress_callback:
+        progress_callback(1.0, f"✅ 完成！共分析 {len(results)} 个标的")
 
     logger.info(f"完成 {len(results)} 个标的的分析")
     return results
