@@ -1,10 +1,14 @@
 """分析历史记录管理器"""
 import json
 import csv
+import logging
+import textwrap
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,14 +24,14 @@ class AnalysisHistoryEntry:
     abnormal_events_count: int
     current_price: float
     ai_summary: str            # AI分析完整内容
-    current_factors: Dict      # 当前因子数据
+    current_factors: Dict[str, Any]      # 当前因子数据
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'AnalysisHistoryEntry':
+    def from_dict(cls, data: Dict[str, Any]) -> 'AnalysisHistoryEntry':
         """从字典创建实例"""
         return cls(**data)
 
@@ -47,7 +51,7 @@ class AnalysisHistoryManager:
         # 确保缓存目录存在
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def _load_data(self) -> Dict:
+    def _load_data(self) -> Dict[str, Any]:
         """加载JSON数据"""
         if not self.cache_file.exists():
             return {"entries": []}
@@ -55,16 +59,18 @@ class AnalysisHistoryManager:
         try:
             with open(self.cache_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load analysis history from {self.cache_file}: {e}")
             return {"entries": []}
 
-    def _save_data(self, data: Dict) -> bool:
+    def _save_data(self, data: Dict[str, Any]) -> bool:
         """保存JSON数据"""
         try:
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             return True
-        except IOError:
+        except IOError as e:
+            logger.error(f"Failed to save analysis history to {self.cache_file}: {e}")
             return False
 
     def add_entry(self, entry: AnalysisHistoryEntry) -> bool:
@@ -119,7 +125,7 @@ class AnalysisHistoryManager:
         data = {"entries": []}
         return self._save_data(data)
 
-    def search(self, keyword: str = "", fund_type: str = None) -> List[AnalysisHistoryEntry]:
+    def search(self, keyword: str = "", fund_type: Optional[str] = None) -> List[AnalysisHistoryEntry]:
         """
         搜索历史记录
 
@@ -168,6 +174,14 @@ class AnalysisHistoryManager:
 
                 # 写入数据
                 for entry in entries:
+                    # 使用textwrap智能截断AI摘要，避免在单词中间截断
+                    summary = textwrap.shorten(
+                        entry.ai_summary,
+                        width=100,
+                        placeholder="...",
+                        break_long_words=True,
+                        break_on_hyphens=False
+                    )
                     writer.writerow([
                         entry.id,
                         entry.symbol,
@@ -176,7 +190,7 @@ class AnalysisHistoryManager:
                         entry.created_at,
                         entry.abnormal_events_count,
                         entry.current_price,
-                        entry.ai_summary[:100] + "..." if len(entry.ai_summary) > 100 else entry.ai_summary
+                        summary
                     ])
 
             return str(csv_file)
