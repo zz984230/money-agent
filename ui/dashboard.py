@@ -23,6 +23,7 @@ from analysis.convertible_technical_analysis import (
     TechnicalAnalysisResult
 )
 from analysis.etf_lof_gamble import LOFETFGambleAnalyzer
+from storage.analysis_history import AnalysisHistoryEntry
 
 # 页面配置
 st.set_page_config(
@@ -1111,6 +1112,12 @@ def render_ai_analysis_page(gamble_analyzer):
                 )
 
                 if result:
+                    # 保存到历史记录
+                    try:
+                        save_analysis_to_history(result)
+                    except Exception as save_error:
+                        st.warning(f"保存历史记录失败: {str(save_error)}")
+
                     display_ai_analysis_result(result)
                 else:
                     st.warning("""
@@ -1126,6 +1133,9 @@ def render_ai_analysis_page(gamble_analyzer):
 
             except Exception as e:
                 st.error(f"分析失败: {str(e)}")
+
+    # 渲染历史记录区域
+    render_history_section()
 
     # 使用说明
     with st.expander("💡 使用说明"):
@@ -1546,6 +1556,107 @@ def cached_analyze_single(_analyzer, symbol, name, fund_type):
     # 直接调用分析器，不缓存结果
     result = _analyzer.analyze_single(symbol, name, fund_type)
     return result
+
+
+def get_history_manager():
+    """获取历史记录管理器实例（缓存）"""
+    cache_dir = Path(__file__).parent.parent / ".cache" / "streamlit"
+
+    if 'history_manager' not in st.session_state:
+        from storage.analysis_history import AnalysisHistoryManager
+        st.session_state.history_manager = AnalysisHistoryManager(cache_dir)
+
+    return st.session_state.history_manager
+
+
+def save_analysis_to_history(result):
+    """保存分析结果到历史"""
+    import time
+
+    manager = get_history_manager()
+
+    # 尝试从 current_factors 中获取价格信息，如果没有则使用默认值
+    # current_factors 包含技术因子，不直接包含价格
+    # 使用 0.0 作为占位值，实际价格需要从数据源重新获取
+    current_price = 0.0
+
+    entry = AnalysisHistoryEntry(
+        id=f"{int(time.time()*1000)}-{result.symbol}",
+        symbol=result.symbol,
+        name=result.name,
+        fund_type=result.fund_type,
+        created_at=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        abnormal_events_count=result.abnormal_events_count,
+        current_price=current_price,
+        ai_summary=result.ai_summary,
+        current_factors=result.current_factors
+    )
+
+    manager.add_entry(entry)
+
+
+def render_history_section():
+    """渲染历史记录区域"""
+    manager = get_history_manager()
+
+    st.markdown("---")
+
+    with st.expander("📜 分析历史记录", expanded=False):
+        # 搜索和过滤控件
+        col1, col2, col3 = st.columns([3, 2, 2])
+        with col1:
+            search_keyword = st.text_input("搜索", placeholder="输入代码或名称", key="history_search")
+        with col2:
+            filter_type = st.selectbox("类型", options=["全部", "LOF", "ETF"], key="history_filter_type")
+        with col3:
+            st.write("")
+            refresh_btn = st.button("刷新", key="history_refresh")
+
+        # 获取历史记录
+        fund_type_filter = None if filter_type == "全部" else filter_type
+        entries = manager.search(keyword=search_keyword, fund_type=fund_type_filter)
+
+        if not entries:
+            st.info("暂无历史记录")
+        else:
+            # 显示历史记录列表
+            for entry in entries:
+                col1, col2, col3, col4 = st.columns([2, 3, 3, 2])
+                with col1:
+                    st.markdown(f"**{entry.symbol}**")
+                with col2:
+                    st.markdown(f"{entry.name}")
+                with col3:
+                    st.caption(entry.created_at.replace('T', ' '))
+                with col4:
+                    view_btn = st.button("查看", key=f"view_{entry.id}")
+                    delete_btn = st.button("删除", key=f"delete_{entry.id}")
+
+                    if view_btn:
+                        st.markdown(f"""<div class="success-box"><h4>{entry.name} ({entry.symbol})</h4><p>类型: {entry.fund_type} | 异常事件: {entry.abnormal_events_count}次</p></div>""", unsafe_allow_html=True)
+                        st.markdown(entry.ai_summary)
+                    if delete_btn:
+                        if manager.delete_entry(entry.id):
+                            st.rerun()
+                        else:
+                            st.error("删除失败")
+
+            # 底部操作按钮
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("清空全部", key="history_clear_all"):
+                    if manager.clear_all():
+                        st.rerun()
+                    else:
+                        st.error("清空失败")
+            with col2:
+                if st.button("导出CSV", key="history_export"):
+                    csv_path = manager.export_to_csv()
+                    if csv_path:
+                        st.success(f"已导出到: {csv_path}")
+                    else:
+                        st.error("导出失败")
 
 
 def main():
