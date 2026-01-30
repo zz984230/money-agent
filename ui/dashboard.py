@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
+from typing import List, Dict
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent
@@ -901,6 +902,14 @@ def render_abnormal_screening_page(gamble_analyzer):
         col1, col2, col3 = st.columns(3)
 
         with col1:
+            # 筛选模式选择
+            scan_mode = st.radio(
+                "筛选模式",
+                options=["use_cache", "rescan"],
+                format_func=lambda x: "使用缓存重新计算" if x == "use_cache" else "重新扫描计算",
+                help="使用缓存：基于已缓存的基金列表计算；重新扫描：重新获取基金列表并更新缓存"
+            )
+
             # 多窗口模式开关
             multi_window_mode = st.checkbox(
                 "多窗口检测",
@@ -967,7 +976,9 @@ def render_abnormal_screening_page(gamble_analyzer):
 
         # 显示筛选条件
         st.markdown("### 筛选条件")
+        mode_desc = "使用缓存重新计算" if scan_mode == "use_cache" else "重新扫描计算（更新缓存）"
         criteria_df = pd.DataFrame([
+            {"参数": "筛选模式", "值": mode_desc},
             {"参数": "时间窗口", "值": window_desc},
             {"参数": "波动阈值", "值": f"≥ ±{threshold}%"},
             {"参数": "标的类型", "值": ", ".join(fund_types)},
@@ -978,7 +989,9 @@ def render_abnormal_screening_page(gamble_analyzer):
         # 执行筛选
         with st.spinner("正在筛选分析，请稍候..."):
             try:
-                results = cached_screen_and_analyze(gamble_analyzer, criteria, top_n)
+                results = screen_and_analyze_with_mode(
+                    gamble_analyzer, criteria, top_n, scan_mode
+                )
 
                 if results:
                     st.markdown(f"""
@@ -1323,27 +1336,173 @@ def _save_to_cache(cache_key, data):
         pass
 
 
-def cached_screen_and_analyze(_analyzer, criteria, top_n):
-    """缓存的筛选分析（使用项目缓存目录）"""
-    cache_key = _get_cache_key("screen_and_analyze", criteria, top_n)
-    cached = _load_from_cache(cache_key, ttl_seconds=3600)
-    if cached is not None:
-        return cached
+@st.cache_data  # 默认一直缓存，直到手动清除
+def cached_get_fund_list(_fetcher, fund_type: str, _force_refresh: bool = False) -> List[Dict]:
+    """
+    缓存基金列表（只缓存代码和名称，不缓存时序数据）
+    默认一直缓存，直到手动清除缓存或重启应用
 
+    Args:
+        _fetcher: AKShareFetcher实例
+        fund_type: 'commodity' 或 'overseas'
+        _force_refresh: 强制刷新缓存（内部使用）
+
+    Returns:
+        基金列表 [{'code': 'xxx', 'name': 'xxx', 'type': 'xxx'}]
+    """
+    if fund_type == 'commodity':
+        return _fetcher.get_commodity_lof_list()
+    elif fund_type == 'overseas':
+        return _fetcher.get_overseas_etf_list()
+    else:
+        return []
+
+
+def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str) -> List:
+    """
+    根据筛选模式执行分析
+
+    Args:
+        _analyzer: LOFETFGambleAnalyzer实例
+        criteria: 筛选条件
+        top_n: 返回数量
+        scan_mode: 'use_cache'（使用缓存）或 'rescan'（重新扫描）
+
+    Returns:
+        分析结果列表
+    """
+    from data.fetchers.akshare_fetcher import AKShareFetcher
+    import time
+
+    fetcher = AKShareFetcher()
+    fund_types = criteria.get('fund_types', [])
+
+    # 获取目标基金列表
+    target_list = []
+    if scan_mode == 'rescan':
+        # 重新扫描模式：使用时间戳绕过缓存，强制重新获取
+        st.info("🔄 正在重新扫描基金列表...")
+        refresh_token = time.time()  # 使用时间戳作为唯一标识
+        for fund_type in fund_types:
+            # 传入刷新令牌绕过缓存
+            fund_list = cached_get_fund_list(fetcher, fund_type, _force_refresh=refresh_token)
+            target_list.extend(fund_list)
+    else:
+        # 使用缓存模式：直接从缓存获取
+        st.info("💾 使用缓存的基金列表...")
+        for fund_type in fund_types:
+            fund_list = cached_get_fund_list(fetcher, fund_type)
+            target_list.extend(fund_list)
+
+    # 使用分析器的内部逻辑进行筛选和深度分析
+    # 这里复用 screen_and_analyze 的逻辑，但传入已获取的 target_list
+    return _screen_and_analyze_with_targets(_analyzer, target_list, criteria, top_n)
+
+
+def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int) -> List:
+    """
+    使用给定的目标列表进行筛选分析（内部函数）
+
+    Args:
+        _analyzer: LOFETFGambleAnalyzer实例
+        target_list: 预先获取的基金列表
+        criteria: 筛选条件
+        top_n: 返回数量
+
+    Returns:
+        分析结果列表
+    """
+    windows = criteria.get('windows', None)
+    if windows is None:
+        window = criteria.get('window', 3)
+        windows = [window]
+
+    threshold = criteria.get('threshold', 0.15)
+    use_multi_window = len(windows) > 1
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"开始筛选分析，使用{len(target_list)}个目标标的，阈值={threshold*100}%")
+
+    # 快速筛选：检测异常波动
+    screened = []
+    for item in target_list[:top_n * 3]:
+        symbol = item['code']
+        name = item['name']
+        fund_type = item['type']
+
+        try:
+            df = _analyzer.fetcher.get_lof_etf_history(symbol, period=100)
+            if df is None or len(df) < 50:
+                continue
+
+            if use_multi_window:
+                abnormal_dates, _ = _analyzer.detector.detect_sudden_moves_multi_window(
+                    df['close'], windows=windows, threshold=threshold
+                )
+            else:
+                abnormal_dates, _ = _analyzer.detector.detect_sudden_moves(
+                    df['close'], window=windows[0], threshold=threshold
+                )
+
+            if len(abnormal_dates) > 0:
+                screened.append({
+                    'symbol': symbol,
+                    'name': name,
+                    'fund_type': fund_type,
+                    'events_count': len(abnormal_dates),
+                    'recent_change': df['close'].pct_change(windows[0]).iloc[-1]
+                })
+
+        except Exception as e:
+            logger.error(f"筛选 {symbol} 失败: {e}")
+            continue
+
+    # 按异常事件数量排序，取前top_n个
+    screened.sort(key=lambda x: x['events_count'], reverse=True)
+    top_targets = screened[:top_n]
+
+    logger.info(f"筛选出 {len(top_targets)} 个目标进行深度分析")
+
+    # 深度分析
+    results = []
+    for target in top_targets:
+        try:
+            result = _analyzer.analyze_single(
+                target['symbol'],
+                target['name'],
+                target['fund_type']
+            )
+            if result is not None:
+                results.append(result)
+
+        except Exception as e:
+            logger.error(f"分析 {target['symbol']} 失败: {e}")
+            continue
+
+    logger.info(f"完成 {len(results)} 个标的的分析")
+    return results
+
+
+def cached_screen_and_analyze(_analyzer, criteria, top_n):
+    """
+    筛选分析（不缓存时序数据和AI分析结果，只缓存基金列表）
+
+    注意：不再缓存完整的分析结果，因为时序数据每天变化
+    """
+    # 直接调用分析器，不缓存结果
     result = _analyzer.screen_and_analyze(criteria, top_n)
-    _save_to_cache(cache_key, result)
     return result
 
 
 def cached_analyze_single(_analyzer, symbol, name, fund_type):
-    """缓存的单个分析（使用项目缓存目录）"""
-    cache_key = _get_cache_key("analyze_single", symbol, name, fund_type)
-    cached = _load_from_cache(cache_key, ttl_seconds=3600)
-    if cached is not None:
-        return cached
+    """
+    单个分析（不缓存时序数据和AI分析结果）
 
+    注意：不再缓存分析结果，因为时序数据每天变化
+    """
+    # 直接调用分析器，不缓存结果
     result = _analyzer.analyze_single(symbol, name, fund_type)
-    _save_to_cache(cache_key, result)
     return result
 
 

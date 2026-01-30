@@ -2,6 +2,7 @@ import akshare as ak
 import pandas as pd
 import logging
 from typing import List, Dict, Optional
+from datetime import datetime
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -837,9 +838,26 @@ class AKShareFetcher:
             # 获取ETF列表
             etf_df = ak.fund_etf_category_sina(symbol="ETF基金")
 
-            overseas_keywords = ['美股', '港股', '德国', '日本', '美国', '纳斯达克',
-                                '标普', '恒生', '欧洲', '亚太', '全球', '油气',
-                                '原油', '生物', '医药', '科技', '半导体', '消费']
+            # 扩充关键词列表，涵盖更多国家和地区
+            overseas_keywords = [
+                # 地区/市场
+                '美股', '港股', '德国', '日本', '美国', '纳斯达克',
+                '标普', '恒生', '欧洲', '亚太', '全球',
+                '英国', '法国', '沙特', '巴西', '印度', '越南',
+                '澳洲', '澳大利亚', '韩国', '台湾', '意大利', '西班牙',
+                '加拿大', '墨西哥', '印尼', '泰国', '马来西亚', '新加坡',
+
+                # 指数名称
+                '标普500', '纳斯达克100', '恒生', 'H股', '红筹', '国企',
+                '日经', '德国DAX', '英国富时', '法国CAC', '富时',
+                '印度SENSEX', '越南VN', '韩国KOSPI', '标普',
+
+                # 投资主题
+                '跨境', 'QDII', '海外', '国际', '出境',
+
+                # 行业/商品类（可能有海外属性）
+                '油气', '原油', '生物', '医药', '科技', '半导体', '消费'
+            ]
 
             overseas_etf = []
             for _, row in etf_df.iterrows():
@@ -862,13 +880,18 @@ class AKShareFetcher:
             logger.error(f"获取海外ETF列表失败: {e}", exc_info=True)
             return []
 
-    def get_lof_etf_history(self, symbol: str, period: int = 365) -> Optional[pd.DataFrame]:
+    def get_lof_etf_history(self, symbol: str, period: int = 100) -> Optional[pd.DataFrame]:
         """
-        获取LOF/ETF历史行情数据
+        获取LOF/ETF历史行情数据（带分层缓存）
+
+        分层缓存策略：
+        - 超过30天的历史数据：按月缓存，长期有效
+        - 7-30天的数据：按周缓存，每周更新
+        - 最近7天的数据：按天缓存，每日更新
 
         Args:
             symbol: 基金代码
-            period: 获取天数，默认365天
+            period: 获取天数，默认100天
 
         Returns:
             DataFrame with columns: date, open, close, high, low, volume, amount
@@ -878,37 +901,175 @@ class AKShareFetcher:
         import os
         from datetime import datetime, timedelta
 
-        # 检查本地缓存
         cache_dir = os.path.expanduser("~/.cache/money-agent/etf_data")
         os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, f"{symbol}.csv")
 
-        # 如果缓存存在且是今天的，直接使用
-        if os.path.exists(cache_file):
-            cache_time = os.path.getmtime(cache_file)
-            if time.time() - cache_time < 86400:  # 缓存有效期1天
+        now = datetime.now()
+        end_date = now
+        start_date = now - timedelta(days=period)
+
+        # 尝试从分层缓存加载数据
+        cached_data = self._load_tiered_cache(symbol, start_date, end_date, cache_dir)
+        if cached_data is not None and len(cached_data) > 0:
+            # 检查缓存数据是否足够
+            cached_start = cached_data.index.min()
+            if cached_start <= start_date:
+                logger.info(f"使用分层缓存数据 {symbol}，共{len(cached_data)}条记录")
+                return cached_data
+            else:
+                # 缓存数据不足，需要获取更多历史数据
+                needed_start_date = cached_start - timedelta(days=30)
+                logger.info(f"缓存数据不足，需要获取 {needed_start_date.strftime('%Y-%m-%d')} 至今的数据")
+
+        # 从网络获取数据
+        df_fresh = self._fetch_from_network(symbol, period, cache_dir)
+        if df_fresh is not None and len(df_fresh) > 0:
+            # 保存到分层缓存
+            self._save_to_tiered_cache(symbol, df_fresh, cache_dir)
+            return df_fresh
+
+        return None
+
+    def _load_tiered_cache(self, symbol: str, start_date: datetime, end_date: datetime, cache_dir: str) -> Optional[pd.DataFrame]:
+        """
+        从分层缓存加载数据
+
+        Returns:
+            合并后的DataFrame，或None
+        """
+        import time
+        from datetime import timedelta
+        import os
+
+        dfs = []
+        now = end_date if isinstance(end_date, datetime) else datetime.now()
+
+        # 1. 检查最近周缓存（最近7天，24小时有效）
+        week_cache = os.path.join(cache_dir, f"{symbol}_week.csv")
+        if os.path.exists(week_cache):
+            cache_time = os.path.getmtime(week_cache)
+            age_hours = (time.time() - cache_time) / 3600
+            if age_hours < 24:
                 try:
-                    df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
-                    logger.info(f"使用缓存数据 {symbol}，共{len(df)}条记录")
-                    return df
+                    df = pd.read_csv(week_cache, index_col=0, parse_dates=True)
+                    dfs.append(df)
+                    logger.debug(f"加载最近周缓存 {symbol}")
                 except Exception as e:
-                    logger.warning(f"读取缓存失败: {e}")
+                    logger.warning(f"读取周缓存失败: {e}")
 
-        # 方法1: 尝试使用日线数据接口
+        # 2. 检查周度缓存（7-30天）
+        week_iter_start = now - timedelta(days=7)
+        week_iter_end = now - timedelta(days=30)
+        current_date = week_iter_start
+        while current_date > week_iter_end:
+            week_num = current_date.isocalendar()[1]
+            year = current_date.year
+            week_file = os.path.join(cache_dir, f"{symbol}_w{year}_{week_num:02d}.csv")
+            if os.path.exists(week_file):
+                try:
+                    df = pd.read_csv(week_file, index_col=0, parse_dates=True)
+                    dfs.append(df)
+                except Exception:
+                    pass
+            current_date = current_date - timedelta(days=7)
+
+        # 3. 检查月度缓存（30天以前）
+        month_iter_end = start_date
+        current_month = now.replace(day=1)
+        while current_month > month_iter_end:
+            month_file = os.path.join(cache_dir, f"{symbol}_m{current_month.year}_{current_month.month:02d}.csv")
+            if os.path.exists(month_file):
+                try:
+                    df = pd.read_csv(month_file, index_col=0, parse_dates=True)
+                    dfs.append(df)
+                except Exception:
+                    pass
+            # 移动到上个月
+            if current_month.month == 1:
+                current_month = current_month.replace(year=current_month.year - 1, month=12)
+            else:
+                current_month = current_month.replace(month=current_month.month - 1)
+
+        # 合并所有缓存数据
+        if dfs:
+            try:
+                merged = pd.concat(dfs)
+                merged = merged[~merged.index.duplicated(keep='last')]
+                merged = merged.sort_index()
+                # 只返回需要的时间范围
+                merged = merged[(merged.index >= start_date) & (merged.index <= end_date)]
+                return merged
+            except Exception as e:
+                logger.warning(f"合并缓存数据失败: {e}")
+
+        return None
+
+    def _save_to_tiered_cache(self, symbol: str, df: pd.DataFrame, cache_dir: str):
+        """
+        将数据保存到分层缓存
+        """
+        from datetime import timedelta
+        import os
+
+        now = datetime.now()
+
+        # 按时间分割数据
+        recent_week = df[df.index >= (now - timedelta(days=7))]
+        recent_month = df[(df.index >= (now - timedelta(days=30))) & (df.index < (now - timedelta(days=7)))]
+        older = df[df.index < (now - timedelta(days=30))]
+
+        # 保存最近周数据（每日更新）
+        if len(recent_week) > 0:
+            week_file = os.path.join(cache_dir, f"{symbol}_week.csv")
+            recent_week.to_csv(week_file)
+            logger.debug(f"保存最近周数据 {symbol}，{len(recent_week)}条")
+
+        # 保存最近月数据（按周分割）
+        if len(recent_month) > 0:
+            week_start = now - timedelta(days=7)
+            for week_offset in range(0, 4):
+                w_start = week_start - timedelta(days=week_offset * 7)
+                w_end = w_start + timedelta(days=7)
+                week_data = recent_month[(recent_month.index >= w_start) & (recent_month.index < w_end)]
+                if len(week_data) > 0:
+                    week_num = w_start.isocalendar()[1]
+                    year = w_start.year
+                    week_file = os.path.join(cache_dir, f"{symbol}_w{year}_{week_num:02d}.csv")
+                    # 如果文件已存在，不覆盖（周度数据相对稳定）
+                    if not os.path.exists(week_file):
+                        week_data.to_csv(week_file)
+
+        # 保存更早的数据（按月分割）
+        if len(older) > 0:
+            for month_key, month_data in older.groupby([older.index.year, older.index.month]):
+                year, month = month_key
+                month_file = os.path.join(cache_dir, f"{symbol}_m{year}_{month:02d}.csv")
+                # 如果文件已存在，不覆盖（历史数据稳定）
+                if not os.path.exists(month_file):
+                    month_data.to_csv(month_file)
+                    logger.debug(f"保存月度数据 {symbol} {year}-{month:02d}，{len(month_data)}条")
+
+    def _fetch_from_network(self, symbol: str, period: int, cache_dir: str) -> Optional[pd.DataFrame]:
+        """
+        从网络获取数据（内部方法）
+        """
+        import time
+        from datetime import datetime, timedelta
+
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=period)).strftime('%Y%m%d')
 
+        # 方法1: 尝试使用日线数据接口
         for attempt in range(2):
             try:
-                time.sleep(1)  # 每次请求前等待1秒
+                time.sleep(1)
 
-                # 尝试使用基金历史数据接口
                 df = ak.fund_etf_hist_em(
                     symbol=symbol,
                     period="daily",
                     start_date=start_date,
                     end_date=end_date,
-                    adjust=""  # 不复权
+                    adjust=""
                 )
 
                 if df is not None and len(df) > 0:
@@ -923,28 +1084,23 @@ class AKShareFetcher:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                     df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
 
-                    # 保存到缓存
-                    df.to_csv(cache_file)
-
-                    logger.info(f"获取{symbol}历史数据成功，共{len(df)}条记录")
+                    logger.info(f"从网络获取{symbol}历史数据成功，共{len(df)}条记录")
                     return df
 
             except Exception as e:
                 logger.error(f"获取{symbol}历史数据失败 (尝试 {attempt+1}/2): {e}")
                 time.sleep(2)
 
-        # 方法2: 使用1分钟数据并重采样为日线（备用方案）
+        # 方法2: 使用分钟数据备用方案
         try:
             logger.info(f"尝试使用分钟数据接口获取 {symbol}...")
             time.sleep(1)
 
             df_min = ak.fund_etf_hist_min_em(symbol=symbol, period='1', adjust='')
             if df_min is not None and len(df_min) > 0:
-                # 重命名列
                 df_min.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount', 'avg_price']
                 df_min['date'] = pd.to_datetime(df_min['date'])
 
-                # 按日期重采样为日线
                 df_min.set_index('date', inplace=True)
                 df_daily = df_min.resample('D').agg({
                     'open': 'first',
@@ -955,25 +1111,20 @@ class AKShareFetcher:
                     'amount': 'sum'
                 }).dropna()
 
-                # 只保留最近period天的数据
                 cutoff_date = datetime.now() - timedelta(days=period)
                 df_daily = df_daily[df_daily.index >= cutoff_date]
 
-                # 保存到缓存
-                df_daily.to_csv(cache_file)
-
-                logger.info(f"通过分钟数据获取{symbol}历史数据成功，共{len(df_daily)}条记录")
+                logger.info(f"通过分钟数据获取{symbol}成功，共{len(df_daily)}条记录")
                 return df_daily
 
         except Exception as e:
-            logger.error(f"分钟数据接口也失败: {e}")
+            logger.error(f"分钟数据接口失败: {e}")
 
-        # 备用方法：尝试sina数据源
+        # 方法3: sina备用接口
         try:
             df = ak.fund_etf_hist_sina(symbol=symbol)
             if df is not None and len(df) > 0:
                 df.index = pd.to_datetime(df.index)
-                # 重命名列以匹配标准格式
                 column_mapping = {
                     'open': 'open',
                     'close': 'close',
@@ -982,18 +1133,16 @@ class AKShareFetcher:
                     'volume': 'volume'
                 }
                 df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-                # 确保所有必需列存在
                 required_cols = ['open', 'close', 'high', 'low']
                 for col in required_cols:
                     if col not in df.columns:
-                        df[col] = df['close']  # 如果缺失，用close填充
-
+                        df[col] = df['close']
                 if 'volume' not in df.columns:
                     df['volume'] = 0
 
-                logger.info(f"通过备用接口获取{symbol}历史数据")
+                logger.info(f"通过sina接口获取{symbol}成功")
                 return df
         except Exception as e:
-            logger.error(f"备用接口也失败: {e}")
+            logger.error(f"sina接口失败: {e}")
 
         return None
