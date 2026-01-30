@@ -8,6 +8,7 @@ ETF/LOF投机异常波动分析模块
 """
 
 import logging
+import time
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Optional
@@ -87,6 +88,53 @@ class VolatilityDetector:
 
         logger.info(f"检测到{len(abnormal_dates)}个异常波动事件（窗口={window}天，阈值={threshold*100}%）")
         return abnormal_dates, abnormal_info
+
+    def detect_sudden_moves_multi_window(
+        self,
+        price_series: pd.Series,
+        windows: List[int] = None,
+        threshold: float = 0.15
+    ) -> tuple[List[pd.Timestamp], List[Dict]]:
+        """
+        多时间窗口检测突增突降（任意窗口满足即触发）
+
+        Args:
+            price_series: 价格序列，必须为pd.Series且有DatetimeIndex
+            windows: 观察窗口列表（天），默认[2, 3, 5]
+            threshold: 阈值，默认15%
+
+        Returns:
+            (abnormal_dates, abnormal_info)
+            - abnormal_dates: 异常日期列表（去重）
+            - abnormal_info: 异常事件详情列表
+        """
+        if windows is None:
+            windows = [2, 3, 5]
+
+        all_abnormal_dates = set()
+        all_abnormal_info = []
+
+        for window in windows:
+            abnormal_dates, abnormal_info = self.detect_sudden_moves(
+                price_series, window=window, threshold=threshold
+            )
+
+            # 合并结果
+            for date in abnormal_dates:
+                if date not in all_abnormal_dates:
+                    all_abnormal_dates.add(date)
+                    # 找到对应的事件详情
+                    for info in abnormal_info:
+                        if info['date'] == date:
+                            all_abnormal_info.append(info)
+                            break
+
+        # 按日期排序
+        all_abnormal_info.sort(key=lambda x: x['date'])
+        all_abnormal_dates = sorted(list(all_abnormal_dates))
+
+        logger.info(f"多窗口检测完成，共发现{len(all_abnormal_dates)}个异常波动事件（窗口={windows}，阈值={threshold*100}%）")
+        return all_abnormal_dates, all_abnormal_info
 
     def multi_timeframe_analysis(self, price_series: pd.Series) -> Dict:
         """
@@ -407,7 +455,7 @@ class LOFETFGambleAnalyzer:
 
         # 1. 获取历史数据
         df = self.fetcher.get_lof_etf_history(symbol, period=365)
-        if df is None or len(df) < 100:
+        if df is None or len(df) < 50:
             logger.warning(f"{symbol} 数据不足，跳过")
             return None
 
@@ -483,7 +531,8 @@ class LOFETFGambleAnalyzer:
 
         Args:
             criteria: 筛选条件，可包含:
-                - window: 时间窗口（默认3）
+                - window: 单个时间窗口（默认3），与windows二选一
+                - windows: 多时间窗口列表（默认[2,3,5]），优先级高于window
                 - threshold: 波动阈值（默认0.15）
                 - fund_types: 基金类型列表 ['LOF', 'ETF'] 或 ['commodity', 'overseas']
             top_n: 返回数量
@@ -494,11 +543,18 @@ class LOFETFGambleAnalyzer:
         if criteria is None:
             criteria = {}
 
-        window = criteria.get('window', 3)
+        # 支持多窗口检测
+        windows = criteria.get('windows', None)
+        if windows is None:
+            window = criteria.get('window', 3)
+            windows = [window]
+
         threshold = criteria.get('threshold', 0.15)
         fund_types = criteria.get('fund_types', ['commodity', 'overseas'])
 
-        logger.info(f"开始筛选分析，窗口={window}天，阈值={threshold*100}%")
+        use_multi_window = len(windows) > 1
+        window_desc = f"{windows}天(多窗口)" if use_multi_window else f"{windows[0]}天"
+        logger.info(f"开始筛选分析，窗口={window_desc}，阈值={threshold*100}%")
 
         # 1. 获取目标列表
         target_list = []
@@ -520,13 +576,20 @@ class LOFETFGambleAnalyzer:
             fund_type = item['type']
 
             try:
-                df = self.fetcher.get_lof_etf_history(symbol, period=180)
-                if df is None or len(df) < 100:
+                # 改为200天历史数据
+                df = self.fetcher.get_lof_etf_history(symbol, period=200)
+                if df is None or len(df) < 50:
                     continue
 
-                abnormal_dates, _ = self.detector.detect_sudden_moves(
-                    df['close'], window=window, threshold=threshold
-                )
+                # 使用多窗口检测
+                if use_multi_window:
+                    abnormal_dates, _ = self.detector.detect_sudden_moves_multi_window(
+                        df['close'], windows=windows, threshold=threshold
+                    )
+                else:
+                    abnormal_dates, _ = self.detector.detect_sudden_moves(
+                        df['close'], window=windows[0], threshold=threshold
+                    )
 
                 if len(abnormal_dates) > 0:
                     screened.append({
@@ -534,7 +597,7 @@ class LOFETFGambleAnalyzer:
                         'name': name,
                         'fund_type': fund_type,
                         'events_count': len(abnormal_dates),
-                        'recent_change': df['close'].pct_change(window).iloc[-1]
+                        'recent_change': df['close'].pct_change(windows[0]).iloc[-1]
                     })
 
             except Exception as e:

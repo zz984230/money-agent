@@ -901,12 +901,23 @@ def render_abnormal_screening_page(gamble_analyzer):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            window = st.selectbox(
-                "时间窗口",
-                options=[2, 3, 5],
-                format_func=lambda x: f"{x}天",
-                index=1  # 默认3天
+            # 多窗口模式开关
+            multi_window_mode = st.checkbox(
+                "多窗口检测",
+                value=True,
+                help="开启后同时检测2/3/5天窗口，任意满足即触发"
             )
+
+            if multi_window_mode:
+                window = None
+                st.info("将同时检测 2/3/5 天窗口")
+            else:
+                window = st.selectbox(
+                    "时间窗口",
+                    options=[2, 3, 5],
+                    format_func=lambda x: f"{x}天",
+                    index=1  # 默认3天
+                )
 
         with col2:
             threshold = st.slider(
@@ -940,16 +951,24 @@ def render_abnormal_screening_page(gamble_analyzer):
         }
         criteria_types = [fund_type_map[t] for t in fund_types]
 
+        # 构建筛选条件
         criteria = {
-            'window': window,
             'threshold': threshold / 100,  # 转换为小数
             'fund_types': criteria_types
         }
 
+        # 多窗口模式或单窗口
+        if multi_window_mode:
+            criteria['windows'] = [2, 3, 5]
+            window_desc = "2/3/5天（多窗口）"
+        else:
+            criteria['window'] = window
+            window_desc = f"{window}天"
+
         # 显示筛选条件
         st.markdown("### 筛选条件")
         criteria_df = pd.DataFrame([
-            {"参数": "时间窗口", "值": f"{window}天"},
+            {"参数": "时间窗口", "值": window_desc},
             {"参数": "波动阈值", "值": f"≥ ±{threshold}%"},
             {"参数": "标的类型", "值": ", ".join(fund_types)},
             {"参数": "返回数量", "值": top_n}
@@ -1253,16 +1272,79 @@ def render_factor_summary_page(gamble_analyzer):
                 st.error(f"分析失败: {str(e)}")
 
 
-@st.cache_data(ttl=1800)  # 30分钟缓存
+import hashlib
+import json
+import pickle
+from pathlib import Path
+
+# 项目缓存目录
+PROJECT_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "streamlit"
+PROJECT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _get_cache_key(func_name, *args, **kwargs):
+    """生成缓存键"""
+    key_data = f"{func_name}:{str(args)}:{str(sorted(kwargs.items()))}"
+    return hashlib.md5(key_data.encode()).hexdigest()
+
+
+def _get_cache_file(cache_key):
+    """获取缓存文件路径"""
+    return PROJECT_CACHE_DIR / f"{cache_key}.pkl"
+
+
+def _is_cache_valid(cache_file, ttl_seconds=3600):
+    """检查缓存是否有效"""
+    if not cache_file.exists():
+        return False
+    import time
+    return time.time() - cache_file.stat().st_mtime < ttl_seconds
+
+
+def _load_from_cache(cache_key, ttl_seconds=3600):
+    """从缓存加载"""
+    cache_file = _get_cache_file(cache_key)
+    if _is_cache_valid(cache_file, ttl_seconds):
+        try:
+            with open(cache_file, 'rb') as f:
+                return pickle.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _save_to_cache(cache_key, data):
+    """保存到缓存"""
+    cache_file = _get_cache_file(cache_key)
+    try:
+        with open(cache_file, 'wb') as f:
+            pickle.dump(data, f)
+    except Exception:
+        pass
+
+
 def cached_screen_and_analyze(_analyzer, criteria, top_n):
-    """缓存的筛选分析"""
-    return _analyzer.screen_and_analyze(criteria, top_n)
+    """缓存的筛选分析（使用项目缓存目录）"""
+    cache_key = _get_cache_key("screen_and_analyze", criteria, top_n)
+    cached = _load_from_cache(cache_key, ttl_seconds=3600)
+    if cached is not None:
+        return cached
+
+    result = _analyzer.screen_and_analyze(criteria, top_n)
+    _save_to_cache(cache_key, result)
+    return result
 
 
-@st.cache_data(ttl=1800)
 def cached_analyze_single(_analyzer, symbol, name, fund_type):
-    """缓存的单个分析"""
-    return _analyzer.analyze_single(symbol, name, fund_type)
+    """缓存的单个分析（使用项目缓存目录）"""
+    cache_key = _get_cache_key("analyze_single", symbol, name, fund_type)
+    cached = _load_from_cache(cache_key, ttl_seconds=3600)
+    if cached is not None:
+        return cached
+
+    result = _analyzer.analyze_single(symbol, name, fund_type)
+    _save_to_cache(cache_key, result)
+    return result
 
 
 def main():

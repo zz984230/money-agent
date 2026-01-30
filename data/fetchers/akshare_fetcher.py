@@ -738,11 +738,22 @@ class AKShareFetcher:
 
             # 提取LOF基金代码和名称
             lof_list = []
-            # 常见LOF代码前缀和知名LOF
+            # 常见LOF代码前缀和知名LOF（包含更多商品LOF）
             known_lof = [
+                # 商品类LOF
                 ('163415', '白银LOF'),
                 ('161116', '黄金基金'),
                 ('162411', '华宝油气'),
+                ('160416', '油气基金'),
+                ('162719', '石油基金'),
+                ('160723', '大宗商品'),
+                ('161217', '国泰商品'),
+                ('165513', '信诚商品'),
+                ('160613', '鹏华钢铁'),
+                ('161025', '大宗商品'),
+                ('163812', '资源LOF'),
+                ('161815', '资源优选'),
+                # 其他常见LOF
                 ('160716', '嘉实沪深300ETF联接'),
                 ('163407', '兴全合润'),
             ]
@@ -760,17 +771,30 @@ class AKShareFetcher:
 
         except Exception as e:
             logger.error(f"获取LOF列表失败: {e}", exc_info=True)
-            # 返回预设的LOF列表作为备用
+            # 返回预设的LOF列表作为备用（扩展版）
             lof_list = [
+                # 商品类LOF
                 ('163415', '白银LOF'),
                 ('161116', '黄金基金'),
                 ('162411', '华宝油气'),
+                ('160416', '油气基金'),
+                ('162719', '石油基金'),
+                ('160723', '大宗商品'),
+                ('161217', '国泰商品'),
+                ('165513', '信诚商品'),
+                ('160613', '鹏华钢铁'),
+                ('161025', '大宗商品'),
+                ('163812', '资源LOF'),
+                ('161815', '资源优选'),
+                # 其他常见LOF
                 ('160716', '嘉实300'),
+                ('163407', '兴全合润'),
             ]
             lof_df = pd.DataFrame([
                 {'code': code, 'name': name, 'fund_type': 'LOF'}
                 for code, name in lof_list
             ])
+            logger.info(f"使用备用LOF列表，共 {len(lof_df)} 只")
             return lof_df
 
     def get_commodity_lof_list(self) -> List[Dict]:
@@ -782,8 +806,9 @@ class AKShareFetcher:
         """
         try:
             lof_df = self.get_lof_list()
-            commodity_keywords = ['商品', '黄金', '原油', '石油', '白银', '有色金属',
-                                  '能源', '农产品', '豆粕', '煤炭', '钢铁']
+            commodity_keywords = ['商品', '黄金', '原油', '石油', '白银', '油气',
+                                  '有色金属', '能源', '农产品', '豆粕', '煤炭',
+                                  '钢铁', '资源', '华宝', '国泰', '信诚']
 
             commodity_lof = []
             for _, row in lof_df.iterrows():
@@ -813,15 +838,20 @@ class AKShareFetcher:
             etf_df = ak.fund_etf_category_sina(symbol="ETF基金")
 
             overseas_keywords = ['美股', '港股', '德国', '日本', '美国', '纳斯达克',
-                                '标普', '恒生', '欧洲', '亚太', '全球']
+                                '标普', '恒生', '欧洲', '亚太', '全球', '油气',
+                                '原油', '生物', '医药', '科技', '半导体', '消费']
 
             overseas_etf = []
             for _, row in etf_df.iterrows():
-                name = row.get('name', '')
-                code = row.get('code', '')
+                # 兼容中文列名
+                name = row.get('name') or row.get('名称', '')
+                code = row.get('code') or row.get('代码', '')
+                # 去除代码前缀（如sz159998 -> 159998）
+                clean_code = code.replace('sz', '').replace('sh', '') if code else ''
+
                 if any(keyword in name for keyword in overseas_keywords):
                     overseas_etf.append({
-                        'code': code,
+                        'code': clean_code,
                         'name': name,
                         'type': 'ETF'
                     })
@@ -844,38 +874,99 @@ class AKShareFetcher:
             DataFrame with columns: date, open, close, high, low, volume, amount
             or None if failed
         """
+        import time
+        import os
         from datetime import datetime, timedelta
 
+        # 检查本地缓存
+        cache_dir = os.path.expanduser("~/.cache/money-agent/etf_data")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{symbol}.csv")
+
+        # 如果缓存存在且是今天的，直接使用
+        if os.path.exists(cache_file):
+            cache_time = os.path.getmtime(cache_file)
+            if time.time() - cache_time < 86400:  # 缓存有效期1天
+                try:
+                    df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+                    logger.info(f"使用缓存数据 {symbol}，共{len(df)}条记录")
+                    return df
+                except Exception as e:
+                    logger.warning(f"读取缓存失败: {e}")
+
+        # 方法1: 尝试使用日线数据接口
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=period)).strftime('%Y%m%d')
 
+        for attempt in range(2):
+            try:
+                time.sleep(1)  # 每次请求前等待1秒
+
+                # 尝试使用基金历史数据接口
+                df = ak.fund_etf_hist_em(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust=""  # 不复权
+                )
+
+                if df is not None and len(df) > 0:
+                    # 标准化列名
+                    df = df[['日期', '开盘', '收盘', '最高', '最低', '成交量', '成交额']].copy()
+                    df.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount']
+                    df['date'] = pd.to_datetime(df['date'])
+                    df.set_index('date', inplace=True)
+
+                    # 确保数据类型正确
+                    for col in ['open', 'close', 'high', 'low']:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+
+                    # 保存到缓存
+                    df.to_csv(cache_file)
+
+                    logger.info(f"获取{symbol}历史数据成功，共{len(df)}条记录")
+                    return df
+
+            except Exception as e:
+                logger.error(f"获取{symbol}历史数据失败 (尝试 {attempt+1}/2): {e}")
+                time.sleep(2)
+
+        # 方法2: 使用1分钟数据并重采样为日线（备用方案）
         try:
-            # 尝试使用基金历史数据接口
-            df = ak.fund_etf_hist_em(
-                symbol=symbol,
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust=""  # 不复权
-            )
+            logger.info(f"尝试使用分钟数据接口获取 {symbol}...")
+            time.sleep(1)
 
-            if df is not None and len(df) > 0:
-                # 标准化列名
-                df = df[['日期', '开盘', '收盘', '最高', '最低', '成交量', '成交额']].copy()
-                df.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount']
-                df['date'] = pd.to_datetime(df['date'])
-                df.set_index('date', inplace=True)
+            df_min = ak.fund_etf_hist_min_em(symbol=symbol, period='1', adjust='')
+            if df_min is not None and len(df_min) > 0:
+                # 重命名列
+                df_min.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount', 'avg_price']
+                df_min['date'] = pd.to_datetime(df_min['date'])
 
-                # 确保数据类型正确
-                for col in ['open', 'close', 'high', 'low']:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+                # 按日期重采样为日线
+                df_min.set_index('date', inplace=True)
+                df_daily = df_min.resample('D').agg({
+                    'open': 'first',
+                    'close': 'last',
+                    'high': 'max',
+                    'low': 'min',
+                    'volume': 'sum',
+                    'amount': 'sum'
+                }).dropna()
 
-                logger.info(f"获取{symbol}历史数据成功，共{len(df)}条记录")
-                return df
+                # 只保留最近period天的数据
+                cutoff_date = datetime.now() - timedelta(days=period)
+                df_daily = df_daily[df_daily.index >= cutoff_date]
+
+                # 保存到缓存
+                df_daily.to_csv(cache_file)
+
+                logger.info(f"通过分钟数据获取{symbol}历史数据成功，共{len(df_daily)}条记录")
+                return df_daily
 
         except Exception as e:
-            logger.error(f"获取{symbol}历史数据失败: {e}")
+            logger.error(f"分钟数据接口也失败: {e}")
 
         # 备用方法：尝试sina数据源
         try:
