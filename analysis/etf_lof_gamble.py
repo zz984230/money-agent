@@ -11,7 +11,7 @@ import logging
 import time
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -524,7 +524,8 @@ class LOFETFGambleAnalyzer:
     def screen_and_analyze(
         self,
         criteria: Optional[Dict] = None,
-        top_n: int = 20
+        top_n: int = 20,
+        progress_callback: Optional[Callable[[float, str], None]] = None
     ) -> List[GambleAnalysisResult]:
         """
         筛选并对多个标的进行AI分析
@@ -536,6 +537,7 @@ class LOFETFGambleAnalyzer:
                 - threshold: 波动阈值（默认0.15）
                 - fund_types: 基金类型列表 ['LOF', 'ETF'] 或 ['commodity', 'overseas']
             top_n: 返回数量
+            progress_callback: 进度回调函数，接收(progress_pct, message)参数
 
         Returns:
             分析结果列表
@@ -570,10 +572,16 @@ class LOFETFGambleAnalyzer:
 
         # 2. 快速筛选：检测异常波动
         screened = []
-        for item in target_list[:top_n * 3]:  # 多取一些用于筛选
+        total = len(target_list[:top_n * 3])
+        for i, item in enumerate(target_list[:top_n * 3]):  # 多取一些用于筛选
             symbol = item['code']
             name = item['name']
             fund_type = item['type']
+
+            # 进度回调: 筛选阶段 (0-40%)
+            if progress_callback:
+                progress = (i + 1) / total * 0.4
+                progress_callback(progress, f"筛选中... {i+1}/{total}")
 
             try:
                 # 使用100天历史数据
@@ -610,9 +618,19 @@ class LOFETFGambleAnalyzer:
 
         logger.info(f"筛选出 {len(top_targets)} 个目标进行深度分析")
 
+        # 进度回调: 开始深度分析
+        if progress_callback:
+            progress_callback(0.4, "开始AI深度分析...")
+
         # 4. 深度分析
         results = []
-        for target in top_targets:
+        total = len(top_targets)
+        for i, target in enumerate(top_targets):
+            # 进度回调: 分析阶段 (40-100%)
+            if progress_callback:
+                progress = 0.4 + (i + 1) / total * 0.6
+                progress_callback(progress, f"分析中... {target['name']} ({i+1}/{total})")
+
             try:
                 result = self.analyze_single(
                     target['symbol'],
@@ -625,6 +643,10 @@ class LOFETFGambleAnalyzer:
             except Exception as e:
                 logger.error(f"分析 {target['symbol']} 失败: {e}")
                 continue
+
+        # 进度回调: 完成
+        if progress_callback:
+            progress_callback(1.0, "分析完成！")
 
         logger.info(f"完成 {len(results)} 个标的的分析")
         return results

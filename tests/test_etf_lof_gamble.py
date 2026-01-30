@@ -4,6 +4,8 @@ ETF/LOF投机异常波动分析模块测试
 import pytest
 import pandas as pd
 import numpy as np
+from unittest.mock import Mock
+from core.agent.base_agent import BaseAgent
 from analysis.etf_lof_gamble import (
     VolatilityDetector,
     AbnormalEvent,
@@ -11,6 +13,13 @@ from analysis.etf_lof_gamble import (
     LOFETFGambleAnalyzer,
     GambleAnalysisResult
 )
+
+
+@pytest.fixture
+def gamble_analyzer():
+    """LOFETFGambleAnalyzer fixture"""
+    mock_agent = Mock(spec=BaseAgent)
+    return LOFETFGambleAnalyzer(mock_agent)
 
 
 def test_detect_sudden_moves_no_abnormal():
@@ -399,3 +408,35 @@ def test_get_top_factors_across_funds_empty():
 
     assert len(factor_ranking) == 0
     assert 'feature' in factor_ranking.columns
+
+
+def test_screen_and_analyze_with_progress_callback(gamble_analyzer, mocker):
+    """测试带进度回调的筛选分析"""
+    progress_mock = mocker.Mock()
+
+    mock_df = pd.DataFrame({
+        'close': [1.0, 1.05, 1.10, 0.95, 1.15, 1.20, 1.25, 1.30, 1.35, 1.40],
+    })
+    mock_df.index = pd.date_range('2025-01-01', periods=10)
+
+    mocker.patch.object(
+        gamble_analyzer.fetcher,
+        'get_commodity_lof_list',
+        return_value=[{'code': '163415', 'name': '白银LOF', 'type': 'LOF'}]
+    )
+    mocker.patch.object(
+        gamble_analyzer.fetcher,
+        'get_lof_etf_history',
+        return_value=mock_df
+    )
+    mocker.patch.object(gamble_analyzer, 'analyze_single', return_value=None)
+
+    criteria = {'window': 3, 'threshold': 0.15, 'fund_types': ['commodity']}
+
+    results = gamble_analyzer.screen_and_analyze(
+        criteria=criteria,
+        top_n=1,
+        progress_callback=progress_mock
+    )
+
+    assert progress_mock.call_count > 0
