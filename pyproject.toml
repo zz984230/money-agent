@@ -41,7 +41,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*", "data*", "config*", "analysis*", "utils*"]
+include = ["core*", "data*", "config*", "analysis*", "utils*", "storage*"]
 
 [tool.uv]
 dev-dependencies = [
