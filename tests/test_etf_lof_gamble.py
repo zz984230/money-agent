@@ -38,7 +38,7 @@ def test_detect_sudden_moves_no_abnormal():
 
 
 def test_detect_sudden_moves_with_abnormal():
-    """测试有异常波动的情况"""
+    """测试有异常波动的情况（支持累计和单日检测）"""
     detector = VolatilityDetector()
 
     # 创建价格序列：在第10-12天有20%的涨幅
@@ -55,9 +55,10 @@ def test_detect_sudden_moves_with_abnormal():
 
     price_series = pd.Series(prices, index=dates)
 
+    # 使用默认参数（累计15% + 单日9%）
     abnormal_dates, abnormal_info = detector.detect_sudden_moves(price_series, window=3, threshold=0.15)
 
-    # 应该检测到异常
+    # 应该检测到异常（累计和单日都可能触发）
     assert len(abnormal_dates) > 0
     assert len(abnormal_info) > 0
 
@@ -66,7 +67,15 @@ def test_detect_sudden_moves_with_abnormal():
     assert 'date' in event
     assert 'return_pct' in event
     assert 'volatility' in event
-    assert abs(event['return_pct']) > 0.15
+    assert 'window' in event
+    assert 'type' in event  # 新增：'cumulative' 或 'single_day'
+
+    # 验证至少有一个事件超过累计阈值
+    has_cumulative_above_threshold = any(
+        abs(e['return_pct']) > 0.15 and e['type'] == 'cumulative'
+        for e in abnormal_info
+    )
+    assert has_cumulative_above_threshold, "应该检测到累计涨幅超过15%的事件"
 
 
 def test_multi_timeframe_analysis():

@@ -1219,7 +1219,7 @@ def render_ai_analysis_page(gamble_analyzer):
     """渲染AI深度分析页面"""
     st.subheader("AI深度分析")
 
-    col1, col2 = st.columns([2, 1])
+    col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
         analysis_code = st.text_input(
@@ -1229,8 +1229,23 @@ def render_ai_analysis_page(gamble_analyzer):
         )
 
     with col2:
-        st.write("")  # 占位
-        analyze_btn = st.button("开始分析", type="primary")
+        analysis_window = st.selectbox(
+            "时间窗口",
+            options=[2, 3, 5],
+            index=1,
+            help="检测异常波动的天数窗口"
+        )
+
+    with col3:
+        analysis_threshold = st.slider(
+            "波动阈值 (%)",
+            min_value=3,
+            max_value=30,
+            value=8,
+            help="累计涨跌幅超过此百分比视为异常"
+        )
+
+    analyze_btn = st.button("开始分析", type="primary")
 
     if analyze_btn and analysis_code:
         with st.spinner("正在分析，请稍候..."):
@@ -1239,7 +1254,9 @@ def render_ai_analysis_page(gamble_analyzer):
                     gamble_analyzer,
                     analysis_code,
                     f"基金{analysis_code}",  # 简化名称
-                    "LOF"  # 默认类型
+                    "LOF",  # 默认类型
+                    window=analysis_window,
+                    threshold=analysis_threshold / 100
                 )
 
                 if result:
@@ -1847,10 +1864,13 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
             return None
 
         try:
+            # 使用与筛选阶段相同的参数
             result = _analyzer.analyze_single(
                 target['symbol'],
                 target['name'],
-                target['fund_type']
+                target['fund_type'],
+                window=windows[0],  # 使用主窗口
+                threshold=threshold
             )
             return result
         except Exception as e:
@@ -1894,14 +1914,22 @@ def cached_screen_and_analyze(_analyzer, criteria, top_n):
     return result
 
 
-def cached_analyze_single(_analyzer, symbol, name, fund_type):
+def cached_analyze_single(_analyzer, symbol, name, fund_type, window=3, threshold=0.08):
     """
     单个分析（不缓存时序数据和AI分析结果）
 
     注意：不再缓存分析结果，因为时序数据每天变化
+
+    Args:
+        _analyzer: LOFETFGambleAnalyzer实例
+        symbol: 基金代码
+        name: 基金名称
+        fund_type: 基金类型
+        window: 时间窗口（天），默认3天
+        threshold: 波动阈值，默认8%（0.08）
     """
-    # 直接调用分析器，不缓存结果
-    result = _analyzer.analyze_single(symbol, name, fund_type)
+    # 直接调用分析器，传递阈值参数
+    result = _analyzer.analyze_single(symbol, name, fund_type, window=window, threshold=threshold)
     return result
 
 

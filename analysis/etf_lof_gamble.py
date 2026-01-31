@@ -38,15 +38,17 @@ class VolatilityDetector:
         self,
         price_series: pd.Series,
         window: int = 3,
-        threshold: float = 0.15
+        threshold: float = 0.15,
+        single_day_threshold: Optional[float] = None
     ) -> tuple[List[pd.Timestamp], List[Dict]]:
         """
-        检测突增突降
+        检测突增突降（支持滑动窗口扫描整个历史数据）
 
         Args:
             price_series: 价格序列，必须为pd.Series且有DatetimeIndex
             window: 观察窗口（天），默认3天
             threshold: 阈值，默认15%
+            single_day_threshold: 单日涨跌幅阈值，默认threshold*0.6
 
         Returns:
             (abnormal_dates, abnormal_info)
@@ -56,26 +58,38 @@ class VolatilityDetector:
         if len(price_series) < window + 1:
             return [], []
 
-        # 计算累计收益率
-        returns = price_series.pct_change(window)
+        # 单日阈值默认为累计阈值的60%
+        if single_day_threshold is None:
+            single_day_threshold = threshold * 0.6
 
+        # 计算累计收益率和单日收益率
+        returns_window = price_series.pct_change(window)
+        returns_1d = price_series.pct_change(1)
+
+        # 用于记录已检测的日期（去重）
+        detected_dates = {}
         abnormal_dates = []
         abnormal_info = []
 
-        for i in range(window, len(returns)):
-            if pd.isna(returns.iloc[i]):
+        # 1. 扫描累计收益率异常（滑动窗口）
+        for i in range(window, len(returns_window)):
+            if pd.isna(returns_window.iloc[i]):
                 continue
 
-            if abs(returns.iloc[i]) > threshold:
-                date = returns.index[i]
+            if abs(returns_window.iloc[i]) > threshold:
+                date = returns_window.index[i]
+                if date in detected_dates:
+                    continue  # 已被检测过
+
                 start_price = price_series.iloc[i - window]
                 end_price = price_series.iloc[i]
-                change_pct = returns.iloc[i]
+                change_pct = returns_window.iloc[i]
 
                 # 计算波动率
                 window_prices = price_series.iloc[i - window:i + 1]
                 volatility = window_prices.std() / window_prices.mean()
 
+                detected_dates[date] = True
                 abnormal_dates.append(date)
                 abnormal_info.append({
                     'date': date,
@@ -83,17 +97,54 @@ class VolatilityDetector:
                     'start_price': start_price,
                     'end_price': end_price,
                     'volatility': volatility,
-                    'window': window
+                    'window': window,
+                    'type': 'cumulative'  # 标记为累计波动
                 })
 
-        logger.info(f"检测到{len(abnormal_dates)}个异常波动事件（窗口={window}天，阈值={threshold*100}%）")
+        # 2. 扫描单日收益率异常（补充检测）
+        for i in range(1, len(returns_1d)):
+            if pd.isna(returns_1d.iloc[i]):
+                continue
+
+            # 跳过已被累计检测捕获的日期
+            date = returns_1d.index[i]
+            if date in detected_dates:
+                continue
+
+            if abs(returns_1d.iloc[i]) > single_day_threshold:
+                start_price = price_series.iloc[i - 1]
+                end_price = price_series.iloc[i]
+                change_pct = returns_1d.iloc[i]
+
+                # 计算波动率
+                window_prices = price_series.iloc[max(0, i - 2):i + 1]  # 取前后几天
+                volatility = window_prices.std() / window_prices.mean()
+
+                detected_dates[date] = True
+                abnormal_dates.append(date)
+                abnormal_info.append({
+                    'date': date,
+                    'return_pct': change_pct,
+                    'start_price': start_price,
+                    'end_price': end_price,
+                    'volatility': volatility,
+                    'window': 1,
+                    'type': 'single_day'  # 标记为单日波动
+                })
+
+        # 按日期排序
+        abnormal_info.sort(key=lambda x: x['date'])
+        abnormal_dates = [info['date'] for info in abnormal_info]
+
+        logger.info(f"检测到{len(abnormal_dates)}个异常波动事件（窗口={window}天，累计阈值={threshold*100}%，单日阈值={single_day_threshold*100}%）")
         return abnormal_dates, abnormal_info
 
     def detect_sudden_moves_multi_window(
         self,
         price_series: pd.Series,
         windows: List[int] = None,
-        threshold: float = 0.15
+        threshold: float = 0.15,
+        single_day_threshold: Optional[float] = None
     ) -> tuple[List[pd.Timestamp], List[Dict]]:
         """
         多时间窗口检测突增突降（任意窗口满足即触发）
@@ -102,6 +153,7 @@ class VolatilityDetector:
             price_series: 价格序列，必须为pd.Series且有DatetimeIndex
             windows: 观察窗口列表（天），默认[2, 3, 5]
             threshold: 阈值，默认15%
+            single_day_threshold: 单日涨跌幅阈值，默认threshold*0.6
 
         Returns:
             (abnormal_dates, abnormal_info)
@@ -116,7 +168,8 @@ class VolatilityDetector:
 
         for window in windows:
             abnormal_dates, abnormal_info = self.detect_sudden_moves(
-                price_series, window=window, threshold=threshold
+                price_series, window=window, threshold=threshold,
+                single_day_threshold=single_day_threshold
             )
 
             # 合并结果
@@ -439,7 +492,14 @@ class LOFETFGambleAnalyzer:
         self.detector = VolatilityDetector()
         self.factor_analyzer = PredictiveFactorAnalyzer()
 
-    def analyze_single(self, symbol: str, name: str, fund_type: str = "LOF") -> Optional[GambleAnalysisResult]:
+    def analyze_single(
+        self,
+        symbol: str,
+        name: str,
+        fund_type: str = "LOF",
+        window: int = 3,
+        threshold: float = 0.15
+    ) -> Optional[GambleAnalysisResult]:
         """
         分析单个LOF/ETF
 
@@ -447,11 +507,13 @@ class LOFETFGambleAnalyzer:
             symbol: 基金代码
             name: 基金名称
             fund_type: 基金类型
+            window: 时间窗口（天）
+            threshold: 波动阈值
 
         Returns:
             GambleAnalysisResult 或 None
         """
-        logger.info(f"开始分析 {name} ({symbol})")
+        logger.info(f"开始分析 {name} ({symbol}), 窗口={window}天, 阈值={threshold*100}%")
 
         # 1. 获取历史数据
         df = self.fetcher.get_lof_etf_history(symbol, period=200)
@@ -459,9 +521,9 @@ class LOFETFGambleAnalyzer:
             logger.warning(f"{symbol} 数据不足，跳过")
             return None
 
-        # 2. 检测异常波动
+        # 2. 检测异常波动（使用传入的参数）
         abnormal_dates, abnormal_info = self.detector.detect_sudden_moves(
-            df['close'], window=3, threshold=0.15
+            df['close'], window=window, threshold=threshold
         )
 
         if len(abnormal_info) == 0:
