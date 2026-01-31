@@ -1459,27 +1459,30 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     use_multi_window = len(windows) > 1
 
     import logging
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     logger = logging.getLogger(__name__)
     logger.info(f"开始筛选分析，使用{len(target_list)}个目标标的，阈值={threshold*100}%")
 
-    # 快速筛选：检测异常波动
+    # 快速筛选：检测异常波动（使用并发加速）
     screened = []
-    total_to_scan = len(target_list[:top_n * 3])
+    items_to_scan = list(enumerate(target_list[:top_n * 3]))
+    total_to_scan = len(items_to_scan)
+    completed_count = [0]  # 使用列表以便在闭包中修改
+    progress_lock = threading.Lock()
 
-    for idx, item in enumerate(target_list[:top_n * 3]):
+    def scan_single_item(idx_item):
+        """扫描单个标的"""
+        idx, item = idx_item
         symbol = item['code']
         name = item['name']
         fund_type = item['type']
 
-        # 更新进度（筛选阶段占40%）
-        if progress_callback and total_to_scan > 0:
-            progress = 0.1 + idx / total_to_scan * 0.4
-            progress_callback(progress, "📊 筛选中...", name, idx + 1, total_to_scan)
-
         try:
             df = _analyzer.fetcher.get_lof_etf_history(symbol, period=100)
             if df is None or len(df) < 50:
-                continue
+                return None
 
             if use_multi_window:
                 abnormal_dates, _ = _analyzer.detector.detect_sudden_moves_multi_window(
@@ -1491,17 +1494,37 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
                 )
 
             if len(abnormal_dates) > 0:
-                screened.append({
+                return {
                     'symbol': symbol,
                     'name': name,
                     'fund_type': fund_type,
                     'events_count': len(abnormal_dates),
                     'recent_change': df['close'].pct_change(windows[0]).iloc[-1]
-                })
+                }
+            return None
 
         except Exception as e:
             logger.error(f"筛选 {symbol} 失败: {e}")
-            continue
+            return None
+
+    # 使用线程池并发扫描（最大10个并发）
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(scan_single_item, item): item for item in items_to_scan}
+
+        for future in as_completed(futures):
+            idx, item = futures[future]
+            result = future.result()
+
+            # 更新进度
+            with progress_lock:
+                completed_count[0] += 1
+                if progress_callback and total_to_scan > 0:
+                    progress = 0.1 + completed_count[0] / total_to_scan * 0.4
+                    detail_text = f"{item['name']} ({item['code']})"
+                    progress_callback(progress, "📊 筛选中...", detail_text, completed_count[0], total_to_scan)
+
+            if result is not None:
+                screened.append(result)
 
     # 按异常事件数量排序，取前top_n个
     screened.sort(key=lambda x: x['events_count'], reverse=True)
@@ -1512,26 +1535,42 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     if progress_callback:
         progress_callback(0.5, "🔍 深度分析", None, None, None)
 
-    # 深度分析
+    # 深度分析（使用并发加速）
     results = []
-    for idx, target in enumerate(top_targets):
-        # 更新进度（深度分析阶段占50%）
-        if progress_callback and len(top_targets) > 0:
-            progress = 0.5 + idx / len(top_targets) * 0.5
-            progress_callback(progress, "🤖 分析中...", target['name'], idx + 1, len(top_targets))
+    analysis_completed = [0]
+    total_to_analyze = len(top_targets)
 
+    def analyze_single_target(target):
+        """分析单个标的"""
         try:
             result = _analyzer.analyze_single(
                 target['symbol'],
                 target['name'],
                 target['fund_type']
             )
-            if result is not None:
-                results.append(result)
-
+            return result
         except Exception as e:
             logger.error(f"分析 {target['symbol']} 失败: {e}")
-            continue
+            return None
+
+    # 使用线程池并发分析（最大3个并发，避免API过载）
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(analyze_single_target, target): target for target in top_targets}
+
+        for future in as_completed(futures):
+            target = futures[future]
+            result = future.result()
+
+            # 更新进度
+            with progress_lock:
+                analysis_completed[0] += 1
+                if progress_callback and total_to_analyze > 0:
+                    progress = 0.5 + analysis_completed[0] / total_to_analyze * 0.5
+                    detail_text = f"{target['name']} ({target['symbol']})"
+                    progress_callback(progress, "🤖 分析中...", detail_text, analysis_completed[0], total_to_analyze)
+
+            if result is not None:
+                results.append(result)
 
     if progress_callback:
         progress_callback(1.0, "✅ 分析完成", None, None, None)
