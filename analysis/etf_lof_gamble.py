@@ -371,7 +371,7 @@ class PredictiveFactorAnalyzer:
         lookback_days: int = 1
     ) -> tuple:
         """
-        构建预测模型
+        基于统计分析计算因子重要性（替代机器学习模型）
 
         Args:
             factors: 因子DataFrame
@@ -379,73 +379,59 @@ class PredictiveFactorAnalyzer:
             lookback_days: 事件前观察天数
 
         Returns:
-            (model, feature_importance) 或 (None, None)
+            (model, feature_importance) 或 (None, feature_importance)
         """
         if len(factors) == 0 or len(target_events) == 0:
             return None, None
 
-        # 创建标签
+        # 创建标签：事件前lookback_days天标记为1
         labels = pd.Series(0, index=factors.index)
         for event_date in target_events:
             if event_date in factors.index:
-                # 找到事件前N天的索引
                 event_idx = factors.index.get_loc(event_date)
                 if event_idx >= lookback_days:
                     pred_idx = event_idx - lookback_days
                     labels.iloc[pred_idx] = 1
 
-        # 对齐数据，删除NaN
+        # 对齐数据
         aligned_data = pd.concat([factors, labels], axis=1)
         aligned_data.columns = list(factors.columns) + ['label']
         aligned_data = aligned_data.dropna()
 
         if len(aligned_data) == 0 or aligned_data['label'].sum() == 0:
-            logger.warning("没有足够的正样本构建模型")
+            logger.warning("没有足够的正样本进行分析")
             return None, None
 
-        # 特征和标签
-        X = aligned_data.iloc[:, :-1]
-        y = aligned_data['label']
+        # 基于统计的因子重要性分析
+        feature_scores = {}
 
-        # 检查正负样本比例
-        pos_count = y.sum()
-        neg_count = len(y) - pos_count
-        logger.info(f"正样本: {pos_count}, 负样本: {neg_count}")
+        for col in factors.columns:
+            if col not in aligned_data.columns:
+                continue
 
-        try:
-            from sklearn.model_selection import train_test_split
-            from sklearn.ensemble import RandomForestClassifier
+            # 1. 事件前后因子均值差异
+            event_values = aligned_data[aligned_data['label'] == 1][col]
+            normal_values = aligned_data[aligned_data['label'] == 0][col]
 
-            # 划分训练测试集
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.3, random_state=42, stratify=y
-            )
+            if len(event_values) > 0 and len(normal_values) > 0:
+                mean_diff = abs(event_values.mean() - normal_values.mean())
+                std_ratio = mean_diff / (normal_values.std() + 1e-6)
 
-            # 训练模型
-            clf = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
-                random_state=42,
-                n_jobs=-1
-            )
-            clf.fit(X_train, y_train)
+                # 2. 因子波动率（事件前）
+                volatility = event_values.std() if len(event_values) > 1 else 0
 
-            # 计算特征重要性
-            feature_importance = pd.DataFrame({
-                'feature': X.columns,
-                'importance': clf.feature_importances_
-            }).sort_values('importance', ascending=False)
+                # 3. 综合得分（标准化后相加）
+                score = std_ratio * 0.7 + volatility * 0.3
+                feature_scores[col] = score
 
-            # 记录模型性能
-            train_score = clf.score(X_train, y_train)
-            test_score = clf.score(X_test, y_test)
-            logger.info(f"模型训练准确率: {train_score:.3f}, 测试准确率: {test_score:.3f}")
+        # 按得分排序
+        feature_importance = pd.DataFrame({
+            'feature': list(feature_scores.keys()),
+            'importance': list(feature_scores.values())
+        }).sort_values('importance', ascending=False)
 
-            return clf, feature_importance
-
-        except Exception as e:
-            logger.error(f"构建预测模型失败: {e}")
-            return None, None
+        logger.info(f"统计因子分析完成，共{len(feature_importance)}个因子")
+        return None, feature_importance
 
 
 @dataclass
@@ -535,13 +521,13 @@ class LOFETFGambleAnalyzer:
         # 3. 计算所有因子
         all_factors = self.factor_analyzer.calculate_all_factors(df)
 
-        # 4. 构建预测模型
+        # 4. 构建统计因子重要性分析
         model, feature_importance = self.factor_analyzer.build_prediction_model(
             all_factors, abnormal_dates
         )
 
-        if feature_importance is None:
-            logger.warning(f"{symbol} 无法构建预测模型")
+        if feature_importance is None or len(feature_importance) == 0:
+            logger.warning(f"{symbol} 无法计算因子重要性")
             feature_importance = pd.DataFrame(columns=['feature', 'importance'])
 
         # 5. 准备当前数据
@@ -732,7 +718,7 @@ class LOFETFGambleAnalyzer:
 
     def get_top_factors_across_funds(self, results: List[GambleAnalysisResult]) -> pd.DataFrame:
         """
-        获取所有标的中的重要因子
+        获取所有标的中的关键因子（基于统计汇总）
 
         Args:
             results: 分析结果列表

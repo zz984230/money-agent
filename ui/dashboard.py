@@ -884,7 +884,7 @@ def render_etf_lof_gamble_page(gamble_analyzer):
 
     st.markdown("""
     <div class="info-box">
-        识别大宗商品LOF和海外ETF的异常波动（2-3天突增突降），计算预测因子，AI分析并给出操作建议。
+        识别大宗商品LOF和海外ETF的异常波动（2-3天突增突降），基于统计分析计算关键因子，AI分析并给出操作建议。
     </div>
     """, unsafe_allow_html=True)
 
