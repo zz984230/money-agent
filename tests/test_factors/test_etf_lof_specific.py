@@ -97,9 +97,15 @@ def test_calculate_turnover_percentile(specific_analyzer):
 
 def test_calculate_etf_lof_specific_factors(specific_analyzer):
     """测试ETF/LOF特有因子计算"""
-    # Mock数据
-    specific_analyzer.fetcher.get_etf_lof_nav = Mock(return_value=1.000)
-    specific_analyzer.fetcher.get_etf_lof_realtime_quote = Mock(return_value={'price': 1.030, 'amount': 1000000})
+    # Mock数据 - 返回dict格式（实际AKShare API返回格式）
+    specific_analyzer.fetcher.get_etf_lof_nav = Mock(return_value={
+        'unit_net_value': 1.000,
+        'accumulated_net_value': 1.100
+    })
+    specific_analyzer.fetcher.get_etf_lof_realtime_quote = Mock(return_value={
+        'current_price': 1.030,
+        'amount': 1000000
+    })
 
     all_funds = [
         {'code': '163415', 'name': '白银LOF', 'amount': 1000000},
@@ -120,8 +126,13 @@ def test_calculate_etf_lof_specific_factors(specific_analyzer):
 
 def test_get_premium_discount_rate_with_nav_and_quote(specific_analyzer):
     """测试获取溢价率（有净值和行情数据）"""
-    specific_analyzer.fetcher.get_etf_lof_nav = Mock(return_value=1.000)
-    specific_analyzer.fetcher.get_etf_lof_realtime_quote = Mock(return_value={'price': 1.030, 'amount': 1000000})
+    # Mock返回dict格式
+    specific_analyzer.fetcher.get_etf_lof_nav = Mock(return_value={
+        'unit_net_value': 1.000
+    })
+    specific_analyzer.fetcher.get_etf_lof_realtime_quote = Mock(return_value={
+        'current_price': 1.030
+    })
 
     rate = specific_analyzer.get_premium_discount_rate('163415', 'LOF')
 
