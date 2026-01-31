@@ -984,6 +984,9 @@ def render_abnormal_screening_page(gamble_analyzer):
             st.markdown("#### 选择标的")
             user_selected_funds = render_fund_selection_box(all_funds, key_prefix="abnormal_fund_select")
 
+            # 同步到 session_state，用于保存配置
+            st.session_state.abnormal_selected_funds = user_selected_funds
+
         except Exception as e:
             st.warning(f"获取基金列表失败: {str(e)}")
 
