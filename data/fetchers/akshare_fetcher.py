@@ -1032,10 +1032,10 @@ class AKShareFetcher:
         # 判断基金类型：16开头是LOF，其他是ETF
         is_lof = symbol.startswith('16')
 
-        # 方法1: 根据基金类型选择对应的日线数据接口
-        for attempt in range(2):
+        # 方法1: 根据基金类型选择对应的日线数据接口（增加重试次数）
+        for attempt in range(3):  # 从2次增加到3次
             try:
-                time.sleep(1)
+                time.sleep(1.5)  # 增加请求间隔
 
                 if is_lof:
                     # LOF基金使用LOF接口

@@ -931,11 +931,11 @@ def render_abnormal_screening_page(gamble_analyzer):
 
         with col2:
             threshold = st.slider(
-                "波动阈值",
-                min_value=5,
+                "波动阈值 (%)",
+                min_value=3,
                 max_value=30,
-                value=15,
-                help="累计涨跌幅超过此百分比视为异常"
+                value=8,
+                help="累计涨跌幅超过此百分比视为异常（建议：市场平稳时用3-8%，波动大时用10%+）"
             )
 
         with col3:
@@ -1087,8 +1087,8 @@ def display_screening_results(results):
     if selected_code:
         selected_result = next((r for r in results if r.symbol == selected_code), None)
         if selected_result:
-            with st.expander(f"📊 {selected_result.name} ({selected_result.symbol}) - AI分析", expanded=True):
-                st.markdown(selected_result.ai_summary)
+            # 使用完整的分析结果展示
+            display_ai_analysis_result(selected_result)
 
 
 def render_ai_analysis_page(gamble_analyzer):
@@ -1232,7 +1232,7 @@ def render_factor_summary_page(gamble_analyzer):
             summary_window = st.selectbox("时间窗口", [2, 3, 5], index=1)
 
         with col2:
-            summary_threshold = st.slider("波动阈值", 5, 30, 15)
+            summary_threshold = st.slider("波动阈值 (%)", 3, 30, 8)
             summary_fund_types = st.multiselect(
                 "标的",
                 ["大宗商品LOF", "海外ETF"],
@@ -1507,8 +1507,8 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
             logger.error(f"筛选 {symbol} 失败: {e}")
             return None
 
-    # 使用线程池并发扫描（最大10个并发）
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # 使用线程池并发扫描（最大3个并发，避免API过载）
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(scan_single_item, item): item for item in items_to_scan}
 
         for future in as_completed(futures):
