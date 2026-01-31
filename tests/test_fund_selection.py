@@ -305,3 +305,147 @@ def test_save_config_with_invalid_name(manager, sample_funds):
     # Verify no config was created
     configs = manager.list_configs()
     assert len(configs) == 0
+
+
+# ==================== Integration Tests ====================
+# These tests require real file I/O and test broader workflows
+
+@pytest.mark.integration
+def test_save_and_load_config_workflow(manager, temp_cache_dir):
+    """Test full workflow: save, list, load, append, delete"""
+    # Step 1: Save a config with funds
+    initial_funds = [
+        {"code": "161226", "name": "国投白银LOF", "type": "LOF"},
+        {"code": "163415", "name": "白银LOF", "type": "LOF"}
+    ]
+    save_result = manager.save_config("白银精选", initial_funds)
+    assert save_result is True, "Failed to save initial config"
+
+    # Step 2: Verify it appears in list_configs()
+    configs = manager.list_configs()
+    assert len(configs) == 1, "Config count should be 1"
+    config_names = [c["name"] for c in configs]
+    assert "白银精选" in config_names, "Config name should be in list"
+
+    # Step 3: Load the config and verify funds
+    loaded_funds = manager.load_config("白银精选")
+    assert loaded_funds is not None, "Failed to load config"
+    assert len(loaded_funds) == 2, "Should have 2 initial funds"
+    assert loaded_funds[0]["code"] == "161226", "First fund code mismatch"
+    assert loaded_funds[1]["code"] == "163415", "Second fund code mismatch"
+
+    # Step 4: Append new funds (with dedup)
+    additional_funds = [
+        {"code": "161116", "name": "黄金基金", "type": "LOF"},
+        {"code": "161226", "name": "白银LOF Duplicate", "type": "LOF"}  # Duplicate
+    ]
+    append_result = manager.append_to_config("白银精选", additional_funds)
+    assert append_result is True, "Failed to append funds"
+
+    # Step 5: Verify updated count (should be 3, not 4, due to dedup)
+    updated_funds = manager.load_config("白银精选")
+    assert len(updated_funds) == 3, "Should have 3 funds after append (dedup)"
+    fund_codes = [f["code"] for f in updated_funds]
+    assert "161116" in fund_codes, "New fund should be added"
+    assert "161226" in fund_codes, "Original fund should be preserved"
+    # Verify the original fund was kept (not replaced by duplicate)
+    original_fund = next(f for f in updated_funds if f["code"] == "161226")
+    assert original_fund["name"] == "国投白银LOF", "Original fund name should be kept"
+
+    # Step 6: Delete the config
+    delete_result = manager.delete_config("白银精选")
+    assert delete_result is True, "Failed to delete config"
+
+    # Step 7: Verify it's gone
+    final_configs = manager.list_configs()
+    assert len(final_configs) == 0, "Config should be deleted"
+    deleted_funds = manager.load_config("白银精选")
+    assert deleted_funds is None, "Deleted config should return None"
+
+
+@pytest.mark.integration
+def test_append_funds_and_analyze():
+    """Test UI integration: selected_funds passed correctly to analysis"""
+    # This test verifies the integration between fund selection config
+    # and the screen_and_analyze_with_mode function
+    import sys
+    from pathlib import Path
+    from unittest.mock import Mock, patch, call
+
+    # Add project root to path
+    project_root = Path(__file__).parent.parent
+    sys.path.insert(0, str(project_root))
+
+    from ui.dashboard import screen_and_analyze_with_mode, _screen_and_analyze_with_targets
+
+    # Mock the analyzer
+    mock_analyzer = Mock()
+    mock_analyzer.detect_sudden_moves.return_value = []
+    mock_analyzer.calculate_all_factors.return_value = {}
+    mock_analyzer.build_prediction_model.return_value = []
+
+    # Mock fetcher to avoid real API calls
+    mock_fetcher = Mock()
+
+    # Sample selected funds from config
+    selected_funds = [
+        {"code": "161226", "name": "国投白银LOF", "type": "LOF"},
+        {"code": "163415", "name": "白银LOF", "type": "LOF"}
+    ]
+
+    criteria = {
+        'window': 3,
+        'threshold': 0.15,
+        'fund_types': ['commodity']
+    }
+    top_n = 10
+
+    # Test with selected_funds mode
+    with patch('ui.dashboard.cached_get_fund_list') as mock_cached_list:
+        # Mock screen_and_analyze_with_mode
+        with patch('ui.dashboard._screen_and_analyze_with_targets') as mock_screen_targets:
+            # Call with selected_funds (should skip cache/rescan logic)
+            result = screen_and_analyze_with_mode(
+                mock_analyzer, criteria, top_n, 'use_cache',
+                selected_funds=selected_funds,
+                progress_callback=None
+            )
+
+            # Verify _screen_and_analyze_with_targets was called
+            assert mock_screen_targets.called, "_screen_and_analyze_with_targets should be called"
+
+            # Verify selected_funds was passed correctly
+            call_args = mock_screen_targets.call_args
+            args, kwargs = call_args
+
+            # First positional arg should be analyzer
+            assert args[0] == mock_analyzer, "Analyzer should be passed"
+
+            # Second positional arg should be target_list (our selected_funds)
+            target_list = args[1]
+            assert len(target_list) == 2, "Target list should have 2 funds"
+            assert target_list[0]["code"] == "161226", "First fund should match"
+            assert target_list[1]["code"] == "163415", "Second fund should match"
+
+            # Verify cached_get_fund_list was NOT called (since we provided selected_funds)
+            assert not mock_cached_list.called, "cached_get_fund_list should not be called when selected_funds provided"
+
+    # Test without selected_funds (should use cache)
+    with patch('ui.dashboard.cached_get_fund_list') as mock_cached_list:
+        mock_cached_list.return_value = selected_funds  # Return same funds
+
+        with patch('ui.dashboard._screen_and_analyze_with_targets') as mock_screen_targets:
+            # Call without selected_funds (should use cache)
+            result = screen_and_analyze_with_mode(
+                mock_analyzer, criteria, top_n, 'use_cache',
+                selected_funds=None,
+                progress_callback=None
+            )
+
+            # Verify cached_get_fund_list WAS called
+            assert mock_cached_list.called, "cached_get_fund_list should be called when selected_funds is None"
+
+            # Verify it was called with correct fund_types
+            call_args = mock_cached_list.call_args
+            args, kwargs = call_args
+            assert args[1] == 'commodity', "Should fetch commodity funds"
