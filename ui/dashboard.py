@@ -1463,9 +1463,6 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     logger.info(f"开始筛选分析，使用{len(target_list)}个目标标的，阈值={threshold*100}%")
 
     # 快速筛选：检测异常波动
-    if progress_callback:
-        progress_callback(0.1, f"📊 正在筛选 {len(target_list[:top_n * 3])} 个标的...", None, None, None)
-
     screened = []
     total_to_scan = len(target_list[:top_n * 3])
 
@@ -1473,6 +1470,11 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
         symbol = item['code']
         name = item['name']
         fund_type = item['type']
+
+        # 更新进度（筛选阶段占40%）
+        if progress_callback and total_to_scan > 0:
+            progress = 0.1 + idx / total_to_scan * 0.4
+            progress_callback(progress, "📊 筛选中...", name, idx + 1, total_to_scan)
 
         try:
             df = _analyzer.fetcher.get_lof_etf_history(symbol, period=100)
@@ -1497,11 +1499,6 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
                     'recent_change': df['close'].pct_change(windows[0]).iloc[-1]
                 })
 
-            # 更新进度（筛选阶段占40%）
-            if progress_callback and total_to_scan > 0:
-                progress = 0.1 + (idx + 1) / total_to_scan * 0.4
-                progress_callback(progress, "📊 筛选中...", name, idx + 1, total_to_scan)
-
         except Exception as e:
             logger.error(f"筛选 {symbol} 失败: {e}")
             continue
@@ -1518,12 +1515,12 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     # 深度分析
     results = []
     for idx, target in enumerate(top_targets):
-        try:
-            # 更新进度（深度分析阶段占50%）
-            if progress_callback and len(top_targets) > 0:
-                progress = 0.5 + (idx + 1) / len(top_targets) * 0.5
-                progress_callback(progress, "🤖 分析中...", target['name'], idx + 1, len(top_targets))
+        # 更新进度（深度分析阶段占50%）
+        if progress_callback and len(top_targets) > 0:
+            progress = 0.5 + idx / len(top_targets) * 0.5
+            progress_callback(progress, "🤖 分析中...", target['name'], idx + 1, len(top_targets))
 
+        try:
             result = _analyzer.analyze_single(
                 target['symbol'],
                 target['name'],
