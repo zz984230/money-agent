@@ -631,7 +631,7 @@ class LOFETFGambleAnalyzer:
 
         # 进度回调: 开始深度分析
         if progress_callback:
-            progress_callback(0.4, "开始AI深度分析...")
+            progress_callback(0.4, "开始AI深度分析...", None, None, None)
 
         # 4. 深度分析
         results = []
@@ -663,7 +663,7 @@ class LOFETFGambleAnalyzer:
 
         # 进度回调: 完成
         if progress_callback:
-            progress_callback(1.0, "分析完成！")
+            progress_callback(1.0, "分析完成！", None, None, None)
 
         logger.info(f"完成 {len(results)} 个标的的分析")
         return results
