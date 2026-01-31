@@ -1018,6 +1018,10 @@ class AKShareFetcher:
     def _fetch_from_network(self, symbol: str, period: int, cache_dir: str) -> Optional[pd.DataFrame]:
         """
         从网络获取数据（内部方法）
+
+        根据基金代码前缀自动判断使用LOF还是ETF接口：
+        - 16xxxx: LOF基金，使用 fund_lof_hist_em()
+        - 其他: ETF基金，使用 fund_etf_hist_em()
         """
         import time
         from datetime import datetime, timedelta
@@ -1025,18 +1029,32 @@ class AKShareFetcher:
         end_date = datetime.now().strftime('%Y%m%d')
         start_date = (datetime.now() - timedelta(days=period)).strftime('%Y%m%d')
 
-        # 方法1: 尝试使用日线数据接口
+        # 判断基金类型：16开头是LOF，其他是ETF
+        is_lof = symbol.startswith('16')
+
+        # 方法1: 根据基金类型选择对应的日线数据接口
         for attempt in range(2):
             try:
                 time.sleep(1)
 
-                df = ak.fund_etf_hist_em(
-                    symbol=symbol,
-                    period="daily",
-                    start_date=start_date,
-                    end_date=end_date,
-                    adjust=""
-                )
+                if is_lof:
+                    # LOF基金使用LOF接口
+                    df = ak.fund_lof_hist_em(
+                        symbol=symbol,
+                        period="daily",
+                        start_date=start_date,
+                        end_date=end_date,
+                        adjust=""
+                    )
+                else:
+                    # ETF基金使用ETF接口
+                    df = ak.fund_etf_hist_em(
+                        symbol=symbol,
+                        period="daily",
+                        start_date=start_date,
+                        end_date=end_date,
+                        adjust=""
+                    )
 
                 if df is not None and len(df) > 0:
                     # 标准化列名
