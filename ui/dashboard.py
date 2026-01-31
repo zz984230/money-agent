@@ -1006,8 +1006,6 @@ def render_abnormal_screening_page(gamble_analyzer):
                 progress_bar.progress(progress, text=message)
                 if detail and current and total:
                     detail_text.markdown(f"**{message}: {detail} ({current}/{total})**")
-                else:
-                    detail_text.markdown(f"**{message}**")
 
             results = screen_and_analyze_with_mode(
                 gamble_analyzer, criteria, top_n, scan_mode, progress_callback=update_progress
