@@ -229,12 +229,28 @@ class VolatilityDetector:
 class PredictiveFactorAnalyzer:
     """预测因子分析器"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        sentiment_analyzer = None,
+        money_flow_analyzer = None,
+        specific_analyzer = None
+    ):
+        """
+        初始化预测因子分析器
+
+        Args:
+            sentiment_analyzer: 情绪分析器（可选）
+            money_flow_analyzer: 资金流分析器（可选）
+            specific_analyzer: ETF/LOF特有因子分析器（可选）
+        """
         self.factors = {}
+        self.sentiment_analyzer = sentiment_analyzer
+        self.money_flow_analyzer = money_flow_analyzer
+        self.specific_analyzer = specific_analyzer
 
     def calculate_technical_factors(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        计算技术因子
+        计算技术因子（增强版，添加更多技术指标）
 
         Args:
             df: DataFrame，必须包含 close, high, low, volume 列
@@ -275,6 +291,8 @@ class PredictiveFactorAnalyzer:
         ema_12 = df['close'].ewm(span=12).mean()
         ema_26 = df['close'].ewm(span=26).mean()
         factors['macd'] = ema_12 - ema_26
+        factors['macd_signal'] = factors['macd'].ewm(span=9).mean()
+        factors['macd_hist'] = factors['macd'] - factors['macd_signal']
 
         # 布林带带宽
         sma_20 = df['close'].rolling(20).mean()
@@ -282,6 +300,40 @@ class PredictiveFactorAnalyzer:
         upper_band = sma_20 + 2 * std_20
         lower_band = sma_20 - 2 * std_20
         factors['bollinger_bandwidth'] = (upper_band - lower_band) / sma_20
+        factors['bollinger_position'] = (df['close'] - lower_band) / (upper_band - lower_band)
+
+        # OBV (On-Balance Volume)
+        if 'volume' in df.columns:
+            obv = (np.sign(df['close'].diff()) * df['volume']).fillna(0).cumsum()
+            factors['obv'] = obv
+            factors['obv_ma'] = obv.rolling(20).mean()
+            factors['obv_divergence'] = (obv - obv.rolling(20).mean()) / (obv.rolling(20).std() + 1e-6)
+
+        # KDJ指标
+        low_9 = df['low'].rolling(9).min()
+        high_9 = df['high'].rolling(9).max()
+        rsv = (df['close'] - low_9) / (high_9 - low_9 + 1e-6) * 100
+        factors['kdj_k'] = rsv.ewm(alpha=1/3).mean()
+        factors['kdj_d'] = factors['kdj_k'].ewm(alpha=1/3).mean()
+        factors['kdj_j'] = 3 * factors['kdj_k'] - 2 * factors['kdj_d']
+
+        # CCI (Commodity Channel Index)
+        tp = (df['high'] + df['low'] + df['close']) / 3
+        ma_tp = tp.rolling(20).mean()
+        mad = tp.rolling(20).apply(lambda x: np.abs(x - np.mean(x)).mean())
+        factors['cci'] = (tp - ma_tp) / (0.015 * mad + 1e-6)
+
+        # Williams %R
+        high_14 = df['high'].rolling(14).max()
+        low_14 = df['low'].rolling(14).min()
+        factors['williams_r'] = -100 * (high_14 - df['close']) / (high_14 - low_14 + 1e-6)
+
+        # 价格动量确认
+        factors['price_trend_strength'] = (
+            (df['close'] > df['close'].rolling(5).mean()).astype(int) +
+            (df['close'] > df['close'].rolling(10).mean()).astype(int) +
+            (df['close'] > df['close'].rolling(20).mean()).astype(int)
+        ) / 3
 
         # 价量背离
         price_change = df['close'].pct_change(5)
@@ -290,6 +342,163 @@ class PredictiveFactorAnalyzer:
             factors['pv_divergence'] = price_change - volume_change
         else:
             factors['pv_divergence'] = price_change
+
+        return factors
+
+    def calculate_sentiment_factors(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        计算情绪因子
+
+        Args:
+            df: DataFrame，必须包含 close, high, low, volume 列
+
+        Returns:
+            因子DataFrame
+        """
+        factors = pd.DataFrame(index=df.index)
+
+        # 价格加速度（二阶动量）
+        returns = df['close'].pct_change()
+        factors['price_acceleration'] = returns.diff()
+
+        # 成交量激增检测
+        if 'volume' in df.columns:
+            volume_ma = df['volume'].rolling(20).mean()
+            volume_std = df['volume'].rolling(20).std()
+            factors['volume_surge'] = (df['volume'] - volume_ma) / (volume_std + 1e-6)
+
+        # 极端收益率频率（过去20天内涨跌幅超过3%的次数）
+        factors['extreme_move_frequency'] = (
+            (returns.abs() > 0.03).rolling(20).sum()
+        )
+
+        # 连续涨跌天数
+        factors['consecutive_days'] = (
+            (returns > 0).astype(int)
+        ).groupby((returns <= 0).cumsum()).cumsum() - (
+            (returns <= 0).astype(int)
+        ).groupby((returns > 0).cumsum()).cumsum()
+
+        # 波动率突变
+        vol_5 = returns.rolling(5).std()
+        vol_20 = returns.rolling(20).std()
+        factors['volatility_spike'] = vol_5 / (vol_20 + 1e-6)
+
+        # 价格位置（相对于20日高低点）
+        high_20 = df['high'].rolling(20).max()
+        low_20 = df['low'].rolling(20).min()
+        factors['price_position'] = (df['close'] - low_20) / (high_20 - low_20 + 1e-6)
+
+        return factors
+
+    def calculate_money_flow_factors(self, df: pd.DataFrame, symbol: str, market: str = 'CN') -> pd.DataFrame:
+        """
+        计算资金流因子
+
+        Args:
+            df: DataFrame，必须包含 close, high, low, volume 列
+            symbol: 标的代码
+            market: 市场标识
+
+        Returns:
+            因子DataFrame
+        """
+        factors = pd.DataFrame(index=df.index)
+
+        # 典型价格（Typical Price）
+        if 'volume' in df.columns:
+            tp = (df['high'] + df['low'] + df['close']) / 3
+
+            # 资金流量（Money Flow）
+            mf = tp * df['volume']
+
+            # 正/负资金流
+            positive_mf = (tp > tp.shift(1)) * mf
+            negative_mf = (tp < tp.shift(1)) * mf
+
+            # 资金流指标（Money Flow Index, MFI）
+            positive_mf_sum = positive_mf.rolling(14).sum()
+            negative_mf_sum = negative_mf.rolling(14).sum()
+            mfi = 100 - (100 / (1 + positive_mf_sum / (negative_mf_sum + 1e-6)))
+            factors['mfi'] = mfi
+
+            # 量价比（Volume Price Trend）
+            vpt = (df['close'].pct_change() * df['volume']).fillna(0).cumsum()
+            factors['vpt'] = vpt
+            factors['vpt_ma'] = vpt.rolling(20).mean()
+
+            # 能量潮（Chaikin Money Flow）
+            ad = (
+                ((df['close'] - df['low']) - (df['high'] - df['close'])) /
+                (df['high'] - df['low'] + 1e-6) * df['volume']
+            ).fillna(0).cumsum()
+
+            factors['chaikin_mf'] = ad.rolling(20).sum() / df['volume'].rolling(20).sum()
+
+        # 价量趋势一致性
+        price_trend = (df['close'] > df['close'].shift(1)).astype(int)
+        if 'volume' in df.columns:
+            volume_trend = (df['volume'] > df['volume'].shift(1)).astype(int)
+            factors['price_volume_consistency'] = (price_trend == volume_trend).astype(int)
+
+        return factors
+
+    def calculate_etf_lof_specific_factors(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        fund_type: str,
+        all_funds: Optional[List[Dict]] = None
+    ) -> pd.DataFrame:
+        """
+        计算ETF/LOF特有因子
+
+        Args:
+            df: DataFrame，必须包含 close 列
+            symbol: 标的代码
+            fund_type: 基金类型
+            all_funds: 所有基金列表（用于相对比较）
+
+        Returns:
+            因子DataFrame
+        """
+        factors = pd.DataFrame(index=df.index)
+
+        # 价格趋势强度
+        def trend_func(x):
+            if len(x) < 2:
+                return 0
+            return 1 if x.iloc[-1] > x.iloc[0] else -1
+
+        factors['price_trend'] = df['close'].rolling(20).apply(trend_func)
+
+        # 波动聚集性
+        returns = df['close'].pct_change()
+        volatility_5 = returns.rolling(5).std()
+        volatility_20 = returns.rolling(20).std()
+        factors['vol_clustering'] = volatility_5 / (volatility_20 + 1e-6)
+
+        # 偏离度（如果有基金净值数据）
+        if 'volume' in df.columns:
+            # 这里可以添加溢价率/折价率相关因子
+            # 由于数据源限制，暂时使用成交额作为流动性代理
+            factors['turnover_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+
+        # 尾部风险（Tail Risk）
+        factors['tail_risk'] = returns.rolling(20).apply(
+            lambda x: (x < x.quantile(0.05)).sum() / len(x) if len(x) > 0 else 0
+        )
+
+        # 动量反转信号
+        momentum_short = df['close'].pct_change(5)
+        momentum_long = df['close'].pct_change(20)
+        factors['momentum_reversal'] = momentum_short - momentum_long
+
+        # 跨品种相关性（如果有all_funds数据）
+        if all_funds and len(all_funds) > 1:
+            # 这里可以计算与同类基金的相关性
+            # 由于需要获取其他基金的历史数据，暂时留空
+            pass
 
         return factors
 
@@ -345,22 +554,53 @@ class PredictiveFactorAnalyzer:
 
         return factors
 
-    def calculate_all_factors(self, df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_all_factors(
+        self,
+        df: pd.DataFrame,
+        symbol: str = None,
+        fund_type: str = None,
+        all_funds: Optional[List[Dict]] = None
+    ) -> pd.DataFrame:
         """
-        计算所有因子
+        计算所有因子（增强版）
 
         Args:
             df: 历史数据DataFrame
+            symbol: 标的代码（可选）
+            fund_type: 基金类型（可选）
+            all_funds: 所有基金列表（可选）
 
         Returns:
             合并后的因子DataFrame
         """
         tech_factors = self.calculate_technical_factors(df)
+        sentiment_factors = self.calculate_sentiment_factors(df)
         liq_factors = self.calculate_liquidity_factors(df)
         commodity_factors = self.calculate_commodity_specific_factors(df)
 
+        # 如果提供了symbol和fund_type，计算特有因子
+        if symbol and fund_type:
+            specific_factors = self.calculate_etf_lof_specific_factors(
+                df, symbol, fund_type, all_funds
+            )
+        else:
+            specific_factors = pd.DataFrame(index=df.index)
+
+        # 如果有资金流分析器，计算资金流因子
+        if self.money_flow_analyzer or symbol:
+            money_flow_factors = self.calculate_money_flow_factors(df, symbol)
+        else:
+            money_flow_factors = pd.DataFrame(index=df.index)
+
         # 合并所有因子
-        all_factors = pd.concat([tech_factors, liq_factors, commodity_factors], axis=1)
+        all_factors = pd.concat([
+            tech_factors,
+            sentiment_factors,
+            liq_factors,
+            commodity_factors,
+            specific_factors,
+            money_flow_factors
+        ], axis=1)
 
         return all_factors
 
@@ -467,7 +707,7 @@ class LOFETFGambleAnalyzer:
 
     def __init__(self, agent):
         """
-        初始化分析器
+        初始化分析器（增强版）
 
         Args:
             agent: AI Agent实例
@@ -476,7 +716,12 @@ class LOFETFGambleAnalyzer:
         from data.fetchers.akshare_fetcher import AKShareFetcher
         self.fetcher = AKShareFetcher()
         self.detector = VolatilityDetector()
-        self.factor_analyzer = PredictiveFactorAnalyzer()
+        # 初始化增强的因子分析器（预留分析器扩展接口）
+        self.factor_analyzer = PredictiveFactorAnalyzer(
+            sentiment_analyzer=None,
+            money_flow_analyzer=None,
+            specific_analyzer=None
+        )
 
     def analyze_single(
         self,
@@ -518,8 +763,12 @@ class LOFETFGambleAnalyzer:
 
         logger.info(f"{symbol} 发现 {len(abnormal_info)} 个异常波动事件")
 
-        # 3. 计算所有因子
-        all_factors = self.factor_analyzer.calculate_all_factors(df)
+        # 3. 计算所有因子（使用增强版方法）
+        all_factors = self.factor_analyzer.calculate_all_factors(
+            df,
+            symbol=symbol,
+            fund_type=fund_type
+        )
 
         # 4. 构建统计因子重要性分析
         model, feature_importance = self.factor_analyzer.build_prediction_model(
