@@ -1435,18 +1435,32 @@ def render_fund_selection_box(all_funds: List[Dict], key_prefix: str = "fund_sel
 
     Returns:
         List[Dict]: 用户选中的基金列表
+
+    Raises:
+        ValueError: 如果 all_funds 为空或缺少必需的键
     """
+    # 输入验证
+    if not all_funds:
+        raise ValueError("all_funds 不能为空")
+
+    # 验证必需的键
+    required_keys = {'code', 'name', 'type'}
+    for i, fund in enumerate(all_funds):
+        if not isinstance(fund, dict):
+            raise ValueError(f"all_funds[{i}] 必须是字典")
+        if not required_keys.issubset(fund.keys()):
+            missing = required_keys - fund.keys()
+            raise ValueError(f"all_funds[{i}] 缺少必需的键: {missing}")
+
     # 初始化 session state
     state_key = f"{key_prefix}_selected"
     if state_key not in st.session_state:
         st.session_state[state_key] = []
 
-    # 创建基金选项映射
-    fund_options = {}
+    # 创建字符串到基金的映射（移除未使用的 fund_options）
     str_to_fund = {}
     for fund in all_funds:
         option_str = f"{fund['code']} - {fund['name']} ({fund['type']})"
-        fund_options[option_str] = fund
         str_to_fund[option_str] = fund
 
     # 三栏布局
@@ -1482,10 +1496,15 @@ def render_fund_selection_box(all_funds: List[Dict], key_prefix: str = "fund_sel
 
         # 向右移动按钮
         if st.button("→", key=f"{key_prefix}_move_right", help="添加选中项"):
+            # 使用 set 进行 O(1) 查重检查
+            selected_set = {tuple(sorted(fund.items())) for fund in st.session_state[state_key]}
             for option_str in selected_from_left:
                 fund = str_to_fund.get(option_str)
-                if fund and fund not in st.session_state[state_key]:
-                    st.session_state[state_key].append(fund)
+                if fund:
+                    fund_tuple = tuple(sorted(fund.items()))
+                    if fund_tuple not in selected_set:
+                        st.session_state[state_key].append(fund)
+                        selected_set.add(fund_tuple)
             st.rerun()
 
         # 向左移动按钮（简化处理，直接重新运行）
@@ -1494,13 +1513,17 @@ def render_fund_selection_box(all_funds: List[Dict], key_prefix: str = "fund_sel
 
         # 全部移动按钮
         if st.button("»", key=f"{key_prefix}_move_all", help="添加全部"):
+            # 使用 set 进行 O(1) 查重检查
+            selected_set = {tuple(sorted(fund.items())) for fund in st.session_state[state_key]}
             for fund in all_funds:
-                if fund not in st.session_state[state_key]:
+                fund_tuple = tuple(sorted(fund.items()))
+                if fund_tuple not in selected_set:
                     st.session_state[state_key].append(fund)
+                    selected_set.add(fund_tuple)
             st.rerun()
 
         # 清空按钮
-        if st.button("«", key=f"{key_prefix}_clear_all", help="清空选择"):
+        if st.button("«", key=f"{key_prefix}_clear_all", help="清空全部"):
             st.session_state[state_key] = []
             st.rerun()
 
@@ -1529,7 +1552,7 @@ def render_fund_selection_box(all_funds: List[Dict], key_prefix: str = "fund_sel
                 use_container_width=True
             )
 
-            if st.button("🗑️ 删除选中", key=f"{key_prefix}_delete"):
+            if st.button("🗑️ 清空全部", key=f"{key_prefix}_delete", help="清空全部已选标的"):
                 st.session_state[state_key] = []
                 st.rerun()
         else:

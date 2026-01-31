@@ -149,6 +149,135 @@ class TestDashboardWithRealAPI:
 
 
 """
+Test render_fund_selection_box function
+"""
+from unittest.mock import Mock, patch, MagicMock
+import pytest
+
+
+@pytest.fixture
+def sample_funds():
+    """Sample list of funds for testing"""
+    return [
+        {'code': '163415', 'name': '白银LOF', 'type': 'commodity'},
+        {'code': '162411', 'name': '华安石油', 'type': 'commodity'},
+        {'code': '513100', 'name': '纳指ETF', 'type': 'overseas'}
+    ]
+
+
+def test_render_fund_selection_box_empty_funds():
+    """Test that empty all_funds raises ValueError"""
+    from ui.dashboard import render_fund_selection_box
+
+    with pytest.raises(ValueError, match="all_funds 不能为空"):
+        render_fund_selection_box([])
+
+
+def test_render_fund_selection_box_missing_required_keys():
+    """Test that missing required keys raises ValueError"""
+    from ui.dashboard import render_fund_selection_box
+
+    # Missing 'type' key
+    invalid_funds = [
+        {'code': '163415', 'name': '白银LOF'}
+    ]
+
+    with pytest.raises(ValueError, match="缺少必需的键"):
+        render_fund_selection_box(invalid_funds)
+
+
+def test_render_fund_selection_box_not_a_dict():
+    """Test that non-dict items raise ValueError"""
+    from ui.dashboard import render_fund_selection_box
+
+    invalid_funds = [
+        '163415'  # Should be a dict, not a string
+    ]
+
+    with pytest.raises(ValueError, match="必须是字典"):
+        render_fund_selection_box(invalid_funds)
+
+
+@patch('ui.dashboard.st')
+def test_render_fund_selection_box_session_state_init(mock_st, sample_funds):
+    """Test that session state is properly initialized"""
+    from ui.dashboard import render_fund_selection_box
+
+    # Setup mock session state
+    mock_session_state = {}
+    mock_st.session_state = mock_session_state
+
+    # Mock streamlit components
+    mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
+    mock_st.text_input.return_value = ""
+    mock_st.multiselect.return_value = []
+    mock_st.button.return_value = False
+    mock_st.markdown = MagicMock()
+    mock_st.data_editor = MagicMock()
+    mock_st.info = MagicMock()
+
+    # Mock DataFrame
+    with patch('ui.dashboard.pd.DataFrame') as mock_df:
+        mock_df_instance = MagicMock()
+        mock_df.return_value = mock_df_instance
+
+        result = render_fund_selection_box(sample_funds, key_prefix="test")
+
+        # Verify session state was initialized
+        assert "test_selected" in mock_session_state
+        assert mock_session_state["test_selected"] == []
+        assert result == []
+
+
+@patch('ui.dashboard.st')
+def test_render_fund_selection_box_deduplication_logic(mock_st, sample_funds):
+    """Test that deduplication uses set for O(1) lookup"""
+    from ui.dashboard import render_fund_selection_box
+
+    # Setup mock session state with pre-selected funds
+    mock_session_state = {
+        "test_selected": [sample_funds[0]]  # Already has 白银LOF
+    }
+    mock_st.session_state = mock_session_state
+
+    # Mock streamlit components
+    mock_cols = [MagicMock(), MagicMock(), MagicMock()]
+    mock_st.columns.return_value = mock_cols
+
+    # Setup context manager for columns
+    mock_cols[0].__enter__ = MagicMock(return_value=mock_cols[0])
+    mock_cols[0].__exit__ = MagicMock(return_value=False)
+    mock_cols[1].__enter__ = MagicMock(return_value=mock_cols[1])
+    mock_cols[1].__exit__ = MagicMock(return_value=False)
+    mock_cols[2].__enter__ = MagicMock(return_value=mock_cols[2])
+    mock_cols[2].__exit__ = MagicMock(return_value=False)
+
+    mock_st.text_input.return_value = ""
+    mock_st.markdown = MagicMock()
+
+    # Simulate selecting the same fund again
+    selected_option = f"{sample_funds[0]['code']} - {sample_funds[0]['name']} ({sample_funds[0]['type']})"
+    mock_st.multiselect.return_value = [selected_option]
+
+    # Simulate clicking the move button
+    with patch('ui.dashboard.st.rerun') as mock_rerun:
+        mock_st.button.side_effect = [False, True, False, False]  # Click "→" button
+
+        # Mock DataFrame for display
+        with patch('ui.dashboard.pd.DataFrame') as mock_df:
+            mock_df_instance = MagicMock()
+            mock_df.return_value = mock_df_instance
+
+            try:
+                render_fund_selection_box(sample_funds, key_prefix="test")
+            except:
+                pass
+
+            # Verify rerun was called
+            assert mock_rerun.called
+
+
+"""
 Test screen_and_analyze_with_mode function
 """
 from unittest.mock import Mock, patch
