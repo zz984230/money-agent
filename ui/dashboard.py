@@ -1006,6 +1006,10 @@ def render_abnormal_screening_page(gamble_analyzer):
                 progress_bar.progress(progress, text=message)
                 if detail and current and total:
                     detail_text.markdown(f"**{message}: {detail} ({current}/{total})**")
+                elif current is not None and total is not None:
+                    detail_text.markdown(f"**{message} ({current}/{total})**")
+                elif detail:
+                    detail_text.markdown(f"**{message}: {detail}**")
 
             results = screen_and_analyze_with_mode(
                 gamble_analyzer, criteria, top_n, scan_mode, progress_callback=update_progress
@@ -1023,7 +1027,7 @@ def render_abnormal_screening_page(gamble_analyzer):
             else:
                 status_container.update(
                     label="⚠️ 未找到符合条件的标的",
-                    state="warning",
+                    state="complete",
                     expanded=True
                 )
                 st.markdown("<p>请尝试调整筛选条件...</p>", unsafe_allow_html=True)
