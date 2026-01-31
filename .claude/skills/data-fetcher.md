@@ -1,6 +1,6 @@
 ---
 name: money-agent-data-fetcher
-description: Data Fetcher module for Money-Agent. Use when fetching A-share market data via AKShare, normalizing Chinese column names to English, adding new data sources, or understanding data retrieval patterns for stocks/ETFs/convertible bonds/indices. Covers AKShareFetcher class methods and column mapping patterns.
+description: Use when fetching A-share market data via AKShare, normalizing Chinese column names to English, adding new data sources, or understanding data retrieval patterns for stocks/ETFs/LOFs/convertible bonds/indices. Covers AKShareFetcher class methods including convertible bond details, LOF/ETF history, and column mapping patterns.
 ---
 
 # Data Fetcher Module
@@ -155,6 +155,74 @@ def get_market_stats(self) -> Optional[Dict]:
             "limit_down_count": int,
             "total_amount": float
         }
+    """
+```
+
+### Convertible Bond Extended Data
+
+```python
+def get_convertible_detail(self, cb_code: str) -> Optional[Dict]:
+    """Get convertible bond detail information
+    Returns:
+        {
+            "cb_code": str,
+            "cb_name": str,
+            "stock_code": str,
+            "stock_name": str,
+            "conversion_price": float,
+            "conversion_value": float,
+            "premium_rate": float,
+            "stock_price": float,
+            ...
+        }
+    """
+
+def get_convertible_realtime(self, cb_code: str) -> Optional[Dict]:
+    """Get convertible bond real-time quote
+    Returns:
+        {
+            "price": float,
+            "volume": float,
+            "amount": float,
+            ...
+        }
+    """
+
+def get_convertible_name_by_code(self, cb_code: str) -> Optional[str]:
+    """Get convertible bond name by code"""
+
+def get_convertible_by_name(self, cb_name: str) -> Optional[str]:
+    """Get convertible bond code by name"""
+```
+
+### LOF/ETF Data
+
+```python
+def get_lof_etf_history(self, symbol: str, period: int = 100) -> Optional[pd.DataFrame]:
+    """Get LOF/ETF historical data
+    Args:
+        symbol: Fund code (e.g., "163415")
+        period: Number of trading days (default: 100)
+    Returns:
+        DataFrame with normalized columns (date, open, high, low, close, volume)
+    """
+
+def get_commodity_lof_list(self) -> List[Dict]:
+    """Get commodity LOF list
+    Returns:
+        [
+            {"code": "163415", "name": "白银LOF", "type": "LOF"},
+            ...
+        ]
+    """
+
+def get_overseas_etf_list(self) -> List[Dict]:
+    """Get overseas ETF list
+    Returns:
+        [
+            {"code": "513100", "name": "纳指ETF", "type": "ETF"},
+            ...
+        ]
     """
 ```
 

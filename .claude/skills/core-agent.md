@@ -1,21 +1,22 @@
 ---
 name: money-agent-core
-description: Core AI Agent module for Money-Agent. Use when working with AI model integrations, extending BaseAgent for new AI providers, implementing GLMAgent, or using PromptBuilder for financial analysis prompts. Covers the agent abstraction layer, GLM-4.7 integration, and prompt engineering patterns for stock/market/ETF/convertible bond analysis.
+description: Use when working with AI model integrations, extending BaseAgent for new AI providers, implementing GLMAgent or ModelScopeAgent, or using PromptBuilder for financial analysis prompts. Covers the agent abstraction layer, GLM-4.7 integration, ModelScope (Qwen) integration, and prompt engineering patterns for stock/market/ETF/convertible bond analysis.
 ---
 
 # Core Agent Module
 
 ## Overview
 
-The core agent module provides the AI abstraction layer for Money-Agent. It defines the `BaseAgent` abstract class that all AI model implementations must extend, and includes the `GLMAgent` implementation for Zhipu AI's GLM-4.7 model.
+The core agent module provides the AI abstraction layer for Money-Agent. It defines the `BaseAgent` abstract class that all AI model implementations must extend, and includes multiple implementations: `GLMAgent` for Zhipu AI's GLM-4.7 model and `ModelScopeAgent` for ModelScope's Qwen models.
 
 ## Architecture
 
 ```
 core/agent/
-├── base_agent.py      # Abstract base class
-├── glm_agent.py       # GLM-4.7 implementation
-└── prompts.py         # Prompt builder for all analysis types
+├── base_agent.py        # Abstract base class
+├── glm_agent.py         # GLM-4.7 implementation (Zhipu AI)
+├── modelscope_agent.py  # ModelScope implementation (Qwen models)
+└── prompts.py           # Prompt builder for all analysis types
 ```
 
 ## BaseAgent Abstract Class
@@ -137,6 +138,67 @@ GLMAgent reads from `config/settings.py`:
 - `GLM_API_BASE`: API endpoint (default: https://open.bigmodel.cn/api/paas/v4)
 - `GLM_MODEL`: Default model (default: glm-4-plus)
 
+## ModelScopeAgent Implementation
+
+Location: `core/agent/modelscope_agent.py`
+
+The `ModelScopeAgent` class provides integration with ModelScope API using OpenAI-compatible interface. Supports Qwen and other ModelScope models.
+
+### Usage
+
+```python
+from core.agent.modelscope_agent import ModelScopeAgent
+
+# Initialize with defaults (reads from settings)
+agent = ModelScopeAgent()
+
+# Initialize with custom parameters
+agent = ModelScopeAgent(
+    model_name="qwen-plus",
+    temperature=0.5,
+    max_tokens=4000
+)
+
+# Simple chat
+response = agent.chat("Analyze this stock...")
+print(response)
+
+# Stream chat
+for chunk in agent.stream_chat("Analyze this stock..."):
+    print(chunk, end="")
+```
+
+### Configuration
+
+ModelScopeAgent reads from `config/settings.py`:
+
+- `MODELSCOPE_API_KEY`: API key (required)
+- `MODELSCOPE_API_BASE`: API endpoint (default: https://api-inference.modelscope.cn/v1)
+- `MODELSCOPE_MODEL`: Default model
+
+### Comparison of Agents
+
+| Feature | GLMAgent | ModelScopeAgent |
+|---------|----------|-----------------|
+| Provider | Zhipu AI | ModelScope (Alibaba) |
+| Models | glm-4-plus, etc. | qwen-plus, qwen-turbo, etc. |
+| SDK | ZhipuAI SDK | OpenAI SDK (compatible) |
+| Use Case | Primary agent | Alternative/fallback |
+
+### Agent Selection Pattern
+
+```python
+from config.settings import settings
+
+# Choose agent based on configuration
+if settings.modelscope_api_key:
+    from core.agent.modelscope_agent import ModelScopeAgent
+    agent = ModelScopeAgent()
+else:
+    from core.agent.glm_agent import GLMAgent
+    agent = GLMAgent()
+```
+
 ## PromptBuilder
 
 Location: `core/agent/prompts.py`
@@ -179,6 +241,39 @@ prompt = builder.build_etf_analysis_prompt(
 prompt = builder.build_convertible_analysis_prompt(
     cb_code="113527",
     cb_name="广电转债"
+)
+
+# Convertible bond technical analysis prompt
+prompt = builder.build_convertible_technical_prompt(
+    technical_data  # ConvertibleTechnicalData object
+)
+
+# Convertible bond terms analysis prompt
+prompt = builder.build_convertible_terms_prompt(
+    cb_code="113527",
+    cb_name="广电转债",
+    stock_price=125.0,
+    stock_name="东方明珠",
+    call_trigger_price=169.0,
+    put_trigger_price=91.0,
+    conversion_price=130.0
+)
+
+# Medium-term analysis prompt
+prompt = builder.build_medium_term_analysis_prompt(
+    cb_code="113527",
+    factor_data
+)
+
+# ETF/LOF speculative analysis prompt
+prompt = builder.build_etf_lof_gamble_prompt(
+    symbol="163415",
+    name="白银LOF",
+    fund_type="LOF",
+    abnormal_info=[...],  # Abnormal events
+    current_factors={...},  # Current factor values
+    feature_importance,  # DataFrame with feature ranking
+    current_data={...}  # Current price/volatility data
 )
 ```
 
