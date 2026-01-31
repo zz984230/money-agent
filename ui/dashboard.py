@@ -1425,6 +1425,119 @@ def cached_get_fund_list(_fetcher, fund_type: str, _force_refresh: bool = False)
         return []
 
 
+def render_fund_selection_box(all_funds: List[Dict], key_prefix: str = "fund_select") -> List[Dict]:
+    """
+    渲染双栏穿梭框组件用于基金选择
+
+    Args:
+        all_funds: 全部可选基金列表 [{"code": "xxx", "name": "xxx", "type": "xxx"}]
+        key_prefix: 组件key前缀，用于避免冲突
+
+    Returns:
+        List[Dict]: 用户选中的基金列表
+    """
+    # 初始化 session state
+    state_key = f"{key_prefix}_selected"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = []
+
+    # 创建基金选项映射
+    fund_options = {}
+    str_to_fund = {}
+    for fund in all_funds:
+        option_str = f"{fund['code']} - {fund['name']} ({fund['type']})"
+        fund_options[option_str] = fund
+        str_to_fund[option_str] = fund
+
+    # 三栏布局
+    col_left, col_mid, col_right = st.columns([2, 1, 2])
+
+    with col_left:
+        st.markdown("##### 可选标的")
+        search_term = st.text_input(
+            "搜索基金",
+            key=f"{key_prefix}_search",
+            placeholder="输入代码或名称搜索..."
+        )
+
+        # 根据搜索词过滤选项
+        if search_term:
+            filtered_options = {
+                k: v for k, v in str_to_fund.items()
+                if search_term.lower() in k.lower()
+            }
+        else:
+            filtered_options = str_to_fund
+
+        selected_from_left = st.multiselect(
+            "选择基金",
+            options=list(filtered_options.keys()),
+            key=f"{key_prefix}_left_select",
+            label_visibility="collapsed"
+        )
+
+    with col_mid:
+        st.markdown("")  # 占位对齐
+        st.markdown("")  # 占位对齐
+
+        # 向右移动按钮
+        if st.button("→", key=f"{key_prefix}_move_right", help="添加选中项"):
+            for option_str in selected_from_left:
+                fund = str_to_fund.get(option_str)
+                if fund and fund not in st.session_state[state_key]:
+                    st.session_state[state_key].append(fund)
+            st.rerun()
+
+        # 向左移动按钮（简化处理，直接重新运行）
+        if st.button("←", key=f"{key_prefix}_move_left", help="重新选择"):
+            st.rerun()
+
+        # 全部移动按钮
+        if st.button("»", key=f"{key_prefix}_move_all", help="添加全部"):
+            for fund in all_funds:
+                if fund not in st.session_state[state_key]:
+                    st.session_state[state_key].append(fund)
+            st.rerun()
+
+        # 清空按钮
+        if st.button("«", key=f"{key_prefix}_clear_all", help="清空选择"):
+            st.session_state[state_key] = []
+            st.rerun()
+
+    with col_right:
+        st.markdown("##### 已选标的")
+
+        if st.session_state[state_key]:
+            # 转换为 DataFrame 用于显示
+            selected_data = []
+            for fund in st.session_state[state_key]:
+                selected_data.append({
+                    "代码": fund['code'],
+                    "名称": fund['name'],
+                    "类型": fund['type']
+                })
+
+            df = pd.DataFrame(selected_data)
+            st.data_editor(
+                df,
+                column_config={
+                    "代码": st.column_config.TextColumn("代码", width="small"),
+                    "名称": st.column_config.TextColumn("名称", width="medium"),
+                    "类型": st.column_config.TextColumn("类型", width="small")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+
+            if st.button("🗑️ 删除选中", key=f"{key_prefix}_delete"):
+                st.session_state[state_key] = []
+                st.rerun()
+        else:
+            st.info("暂无已选标的，请从左侧选择")
+
+    return st.session_state[state_key]
+
+
 def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, selected_funds: Optional[List[Dict]] = None, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
     """
     根据筛选模式执行分析
