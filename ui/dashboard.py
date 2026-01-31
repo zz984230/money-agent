@@ -899,18 +899,55 @@ def render_abnormal_screening_page(gamble_analyzer):
     """渲染异常波动筛选页面"""
     st.subheader("异常波动筛选")
 
+    # 筛选模式选择（放在form外面，以便动态显示缓存信息）
+    scan_mode = st.radio(
+        "筛选模式",
+        options=["use_cache", "rescan"],
+        format_func=lambda x: "使用缓存重新计算" if x == "use_cache" else "重新扫描计算",
+        help="使用缓存：基于已缓存的基金列表计算；重新扫描：重新获取基金列表并更新缓存"
+    )
+
+    # 显示缓存的基金列表（仅在使用缓存模式时）
+    if scan_mode == "use_cache":
+        with st.expander("📋 查看缓存的基金列表", expanded=False):
+            try:
+                from data.fetchers.akshare_fetcher import AKShareFetcher
+                fetcher = AKShareFetcher()
+
+                # 获取缓存的基金列表
+                commodity_list = cached_get_fund_list(fetcher, 'commodity')
+                overseas_list = cached_get_fund_list(fetcher, 'overseas')
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**大宗商品LOF** ({len(commodity_list)}只)")
+                    if commodity_list:
+                        commodity_display = [f"{f['code']} - {f['name']}" for f in commodity_list]
+                        selected_commodity = st.selectbox(
+                            "选择查看",
+                            options=commodity_display,
+                            key="cache_commodity_select",
+                            label_visibility="collapsed"
+                        )
+
+                with col2:
+                    st.markdown(f"**海外ETF** ({len(overseas_list)}只)")
+                    if overseas_list:
+                        overseas_display = [f"{f['code']} - {f['name']}" for f in overseas_list]
+                        selected_overseas = st.selectbox(
+                            "选择查看",
+                            options=overseas_display,
+                            key="cache_overseas_select",
+                            label_visibility="collapsed"
+                        )
+
+            except Exception as e:
+                st.warning(f"获取缓存列表失败: {str(e)}")
+
     with st.form("abnormal_screening_form"):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            # 筛选模式选择
-            scan_mode = st.radio(
-                "筛选模式",
-                options=["use_cache", "rescan"],
-                format_func=lambda x: "使用缓存重新计算" if x == "use_cache" else "重新扫描计算",
-                help="使用缓存：基于已缓存的基金列表计算；重新扫描：重新获取基金列表并更新缓存"
-            )
-
             # 多窗口模式开关
             multi_window_mode = st.checkbox(
                 "多窗口检测",
@@ -1388,7 +1425,7 @@ def cached_get_fund_list(_fetcher, fund_type: str, _force_refresh: bool = False)
         return []
 
 
-def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
+def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, selected_funds: Optional[List[Dict]] = None, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
     """
     根据筛选模式执行分析
 
@@ -1397,6 +1434,7 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
         criteria: 筛选条件
         top_n: 返回数量
         scan_mode: 'use_cache'（使用缓存）或 'rescan'（重新扫描）
+        selected_funds: 用户预选的基金列表（可选，如果提供则跳过缓存/重扫逻辑）
         progress_callback: 进度回调函数，接收 (progress: float, message: str, name: Optional[str], current: Optional[int], total: Optional[int])
 
     Returns:
@@ -1410,7 +1448,14 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
 
     # 获取目标基金列表
     target_list = []
-    if scan_mode == 'rescan':
+    if selected_funds is not None:
+        # 使用用户预选的基金
+        target_list = selected_funds
+        if progress_callback:
+            progress_callback(0.0, f"📋 使用配置中的 {len(selected_funds)} 只基金...", None, None, None)
+        else:
+            st.info(f"📋 使用配置中的 {len(selected_funds)} 只基金...")
+    elif scan_mode == 'rescan':
         # 重新扫描模式：使用时间戳绕过缓存，强制重新获取
         if progress_callback:
             progress_callback(0.0, "🔄 正在重新扫描基金列表...", None, None, None)

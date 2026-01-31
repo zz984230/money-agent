@@ -148,6 +148,137 @@ class TestDashboardWithRealAPI:
         assert isinstance(etf_list, list)
 
 
+"""
+Test screen_and_analyze_with_mode function
+"""
+from unittest.mock import Mock, patch
+import pytest
+
+
+@pytest.fixture
+def mock_analyzer():
+    """Mock LOFETFGambleAnalyzer instance"""
+    analyzer = Mock()
+    return analyzer
+
+
+@pytest.fixture
+def sample_criteria():
+    """Sample criteria for screening"""
+    return {
+        'window': 3,
+        'threshold': 0.15,
+        'fund_types': ['commodity', 'overseas']
+    }
+
+
+@pytest.fixture
+def sample_selected_funds():
+    """Sample list of selected funds"""
+    return [
+        {'code': '163415', 'name': '白银LOF', 'type': 'commodity'},
+        {'code': '162411', 'name': '华安石油', 'type': 'commodity'},
+        {'code': '513100', 'name': '纳指ETF', 'type': 'overseas'}
+    ]
+
+
+def test_screen_and_analyze_with_selected_funds(mock_analyzer, sample_criteria, sample_selected_funds):
+    """
+    Test that screen_and_analyze_with_mode accepts and uses selected_funds parameter
+
+    When selected_funds is provided, it should:
+    1. Skip cache/rescan logic
+    2. Pass selected_funds directly to _screen_and_analyze_with_targets
+    3. Show appropriate message
+    """
+    from ui.dashboard import screen_and_analyze_with_mode
+
+    # Mock the internal _screen_and_analyze_with_targets function
+    expected_results = [Mock(), Mock()]
+    with patch('ui.dashboard._screen_and_analyze_with_targets') as mock_screen_targets:
+        mock_screen_targets.return_value = expected_results
+
+        # Call with selected_funds
+        result = screen_and_analyze_with_mode(
+            _analyzer=mock_analyzer,
+            criteria=sample_criteria,
+            top_n=10,
+            scan_mode='use_cache',  # This should be ignored when selected_funds is provided
+            selected_funds=sample_selected_funds,
+            progress_callback=None
+        )
+
+        # Verify the result is what we expected
+        assert result == expected_results
+
+        # Verify _screen_and_analyze_with_targets was called with selected_funds as target_list
+        mock_screen_targets.assert_called_once()
+        call_args = mock_screen_targets.call_args
+        assert call_args[0][1] == sample_selected_funds  # target_list parameter
+
+
+def test_screen_and_analyze_with_selected_funds_with_callback(mock_analyzer, sample_criteria, sample_selected_funds):
+    """
+    Test that progress_callback is called with correct message when using selected_funds
+    """
+    from ui.dashboard import screen_and_analyze_with_mode
+
+    mock_callback = Mock()
+    expected_results = [Mock()]
+
+    with patch('ui.dashboard._screen_and_analyze_with_targets') as mock_screen_targets:
+        mock_screen_targets.return_value = expected_results
+
+        # Call with selected_funds and progress_callback
+        result = screen_and_analyze_with_mode(
+            _analyzer=mock_analyzer,
+            criteria=sample_criteria,
+            top_n=10,
+            scan_mode='rescan',  # This should be ignored when selected_funds is provided
+            selected_funds=sample_selected_funds,
+            progress_callback=mock_callback
+        )
+
+        # Verify callback was called with message about using selected funds
+        mock_callback.assert_called()
+        # First call should be progress 0.0 with message about using configured funds
+        first_call = mock_callback.call_args_list[0]
+        assert first_call[0][0] == 0.0  # progress
+        assert "使用配置中的" in first_call[0][1]  # message
+        assert str(len(sample_selected_funds)) in first_call[0][1]  # count
+
+
+def test_screen_and_analyze_without_selected_funds_uses_cache(mock_analyzer, sample_criteria):
+    """
+    Test that when selected_funds is None, the function uses cache mode as before
+    """
+    from ui.dashboard import screen_and_analyze_with_mode
+
+    expected_results = [Mock()]
+
+    with patch('ui.dashboard._screen_and_analyze_with_targets') as mock_screen_targets, \
+         patch('ui.dashboard.cached_get_fund_list') as mock_cached_list:
+
+        mock_cached_list.return_value = [
+            {'code': '163415', 'name': '白银LOF', 'type': 'commodity'}
+        ]
+        mock_screen_targets.return_value = expected_results
+
+        # Call without selected_funds (defaults to None)
+        result = screen_and_analyze_with_mode(
+            _analyzer=mock_analyzer,
+            criteria=sample_criteria,
+            top_n=10,
+            scan_mode='use_cache',
+            progress_callback=None
+        )
+
+        # Verify it went through cache path
+        assert mock_cached_list.called
+        # Verify _screen_and_analyze_with_targets was called with the fetched funds
+        mock_screen_targets.assert_called_once()
+
+
 if __name__ == "__main__":
     # 运行基本测试
     test = TestDashboard()
