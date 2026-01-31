@@ -197,6 +197,46 @@ factor_ranking = analyzer.get_top_factors_across_funds(results)
 - AI深度分析：单个标的详细分析和操作建议
 - 因子分析汇总：跨标的因子重要性排名
 
+### ETF/LOF投机分析配置管理
+
+位于 `storage/fund_selection.py`
+
+**核心功能:**
+- 保存/加载/删除命名配置
+- 配置追加（自动去重）
+- 支持批量分析选中标的
+
+**使用示例:**
+```python
+from storage.fund_selection import FundSelectionManager
+from pathlib import Path
+
+manager = FundSelectionManager(Path(".cache/streamlit"))
+
+# 保存配置
+funds = [
+    {"code": "163415", "name": "白银LOF", "type": "commodity"},
+    {"code": "161226", "name": "白银基金", "type": "commodity"}
+]
+manager.save_config("白银LOF组合", funds)
+
+# 加载配置
+loaded = manager.load_config("白银LOF组合")
+
+# 追加标的（自动去重）
+new_funds = [{"code": "518880", "name": "黄金ETF", "type": "commodity"}]
+manager.append_to_config("白银LOF组合", new_funds)
+
+# 列出所有配置
+configs = manager.list_configs()
+```
+
+**UI集成:**
+- 在【ETF/LOF 投机分析】页面的"使用缓存重新计算"模式下
+- 提供双栏穿梭框选择标的
+- 支持保存/加载命名配置
+- 支持批量分析选中标的
+
 ### Streamlit Dashboard
 
 Located in `ui/dashboard.py`. Uses `@st.cache_resource` for agent initialization and `@st.cache_data` for analyzer instances. Pages: Home, Stock Screening, Market Analysis, ETF Analysis, Convertible Bonds.
