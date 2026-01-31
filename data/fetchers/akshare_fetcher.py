@@ -1224,3 +1224,91 @@ class AKShareFetcher:
         except Exception as e:
             logger.error(f"获取涨停统计失败: {e}", exc_info=True)
             return None
+
+    def get_individual_fund_flow_data(
+        self, symbol: str, market: str = 'sz'
+    ) -> Optional[pd.DataFrame]:
+        """获取个股资金流数据
+
+        Args:
+            symbol: 6位股票代码
+            market: 市场代码 ('sh', 'sz', 'bj')
+
+        Returns:
+            包含主力净流入、大单数据的DataFrame，失败返回None
+        """
+        try:
+            df = ak.stock_individual_fund_flow(symbol=symbol, market=market)
+            if df is not None and not df.empty:
+                logger.info(f"获取{symbol}资金流数据成功，共{len(df)}条记录")
+            return df
+        except Exception as e:
+            logger.error(f"获取{symbol}资金流数据失败: {e}", exc_info=True)
+            return None
+
+    def get_northbound_capital_data(self, symbol: str = None) -> Optional[pd.DataFrame]:
+        """获取北向资金数据
+
+        Args:
+            symbol: 个股代码，None表示全市场
+
+        Returns:
+            北向资金持仓或流向DataFrame，失败返回None
+        """
+        try:
+            if symbol:
+                df = ak.stock_hsgt_individual_em(symbol=symbol)
+            else:
+                df = ak.stock_hsgt_hist_em(symbol="北向资金")
+
+            if df is not None and not df.empty:
+                logger.info(f"获取北向资金数据成功，共{len(df)}条记录")
+            return df
+        except Exception as e:
+            logger.error(f"获取北向资金数据失败: {e}", exc_info=True)
+            return None
+
+    def get_etf_lof_nav(self, symbol: str) -> Optional[float]:
+        """获取ETF/LOF净值
+
+        Args:
+            symbol: 基金代码
+
+        Returns:
+            最新净值，失败返回None
+        """
+        try:
+            df = ak.fund_open_fund_info_em(symbol, indicator="单位净值")
+            if df is not None and not df.empty:
+                nav = df.iloc[-1]['单位净值']
+                logger.info(f"获取{symbol}净值成功: {nav}")
+                return float(nav)
+            return None
+        except Exception as e:
+            logger.error(f"获取{symbol}净值失败: {e}", exc_info=True)
+            return None
+
+    def get_etf_lof_realtime_quote(self, symbol: str) -> Optional[Dict]:
+        """获取ETF/LOF实时行情
+
+        Args:
+            symbol: 基金代码
+
+        Returns:
+            实时行情字典，包含price和amount，失败返回None
+        """
+        try:
+            df = ak.fund_etf_spot_em()
+            if df is not None and not df.empty:
+                fund_data = df[df['代码'] == symbol]
+                if not fund_data.empty:
+                    result = {
+                        'price': float(fund_data.iloc[0]['最新价']),
+                        'amount': float(fund_data.iloc[0]['成交额']) if '成交额' in fund_data.columns else 0
+                    }
+                    logger.info(f"获取{symbol}实时行情成功: {result}")
+                    return result
+            return None
+        except Exception as e:
+            logger.error(f"获取{symbol}实时行情失败: {e}", exc_info=True)
+            return None
