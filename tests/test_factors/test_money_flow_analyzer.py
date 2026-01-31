@@ -90,3 +90,20 @@ def test_calculate_money_flow_factors(flow_analyzer, mock_fund_flow_data):
     assert 'main_force_net_inflow_ratio' in factors.columns
     assert 'large_order_momentum' in factors.columns
     assert len(factors) == 20
+
+
+def test_get_northbound_flow(flow_analyzer):
+    """测试获取北向资金流"""
+    mock_northbound_data = pd.DataFrame({
+        'date': pd.date_range('2024-01-01', periods=10, freq='D'),
+        'northbound_net_inflow': [100, 200, 150, 180, 220,
+                                   190, 210, 230, 200, 180]
+    })
+    flow_analyzer.fetcher.get_northbound_capital_data = Mock(
+        return_value=mock_northbound_data
+    )
+
+    result = flow_analyzer.get_northbound_flow('163415')
+
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) == 10
