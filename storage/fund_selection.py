@@ -1,12 +1,17 @@
 """基金选择配置管理器 - 用于保存和加载用户自定义的基金组合配置"""
 import json
 import logging
+import re
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# 配置名称验证：只允许中文、字母、数字、下划线、连字符、空格
+CONFIG_NAME_PATTERN = re.compile(r'^[\u4e00-\u9fff\w\- ]+$')
+CONFIG_NAME_MAX_LENGTH = 50
 
 
 @dataclass
@@ -88,6 +93,31 @@ class FundSelectionManager:
         index_data = self._load_index()
         return index_data.get("configs", [])
 
+    def _validate_config_name(self, name: str) -> tuple[bool, Optional[str]]:
+        """
+        验证配置名称是否有效
+
+        Args:
+            name: 配置名称
+
+        Returns:
+            (是否有效, 错误信息)
+        """
+        if not name or not name.strip():
+            return False, "配置名称不能为空"
+
+        if len(name) > CONFIG_NAME_MAX_LENGTH:
+            return False, f"配置名称不能超过 {CONFIG_NAME_MAX_LENGTH} 个字符"
+
+        if not CONFIG_NAME_PATTERN.match(name):
+            return False, "配置名称只能包含中文、字母、数字、下划线、连字符和空格"
+
+        # 检查保留名称
+        if name == "-- 新建配置 --":
+            return False, "此名称为保留名称，请使用其他名称"
+
+        return True, None
+
     def save_config(self, name: str, funds: List[Dict[str, Any]], overwrite: bool = False) -> bool:
         """
         保存配置
@@ -100,6 +130,12 @@ class FundSelectionManager:
         Returns:
             是否保存成功
         """
+        # 验证配置名称
+        is_valid, error_msg = self._validate_config_name(name)
+        if not is_valid:
+            logger.warning(f"Invalid config name '{name}': {error_msg}")
+            return False
+
         # 检查配置是否已存在
         index_data = self._load_index()
         existing_config = next(

@@ -26,6 +26,9 @@ from analysis.etf_lof_gamble import LOFETFGambleAnalyzer
 from storage.analysis_history import AnalysisHistoryEntry
 from storage.fund_selection import FundSelectionManager
 
+# 基金配置UI常量
+NEW_CONFIG_OPTION = "-- 新建配置 --"
+
 # 页面配置
 st.set_page_config(
     page_title="A股 AI 投研竞技场",
@@ -923,7 +926,7 @@ def render_abnormal_screening_page(gamble_analyzer):
         # 配置选择器
         col_config1, col_config2, col_config3 = st.columns([2, 2, 2])
         with col_config1:
-            config_names = ["-- 新建配置 --"] + [c["name"] for c in config_manager.list_configs()]
+            config_names = [NEW_CONFIG_OPTION] + [c["name"] for c in config_manager.list_configs()]
             selected_config_name = st.selectbox("加载配置", options=config_names, key="abnormal_config_selector")
 
         with col_config2:
@@ -935,7 +938,7 @@ def render_abnormal_screening_page(gamble_analyzer):
             with col_btn1:
                 save_btn = st.button("💾 保存配置", key="abnormal_save_config", disabled=not config_name_input)
             with col_btn2:
-                load_btn = st.button("📂 加载配置", key="abnormal_load_config", disabled=(selected_config_name == "-- 新建配置 --"))
+                load_btn = st.button("📂 加载配置", key="abnormal_load_config", disabled=(selected_config_name == NEW_CONFIG_OPTION))
 
         # 获取全部基金列表（用于穿梭框）
         try:
@@ -950,7 +953,7 @@ def render_abnormal_screening_page(gamble_analyzer):
                 st.session_state.abnormal_selected_funds = []
 
             # 处理加载配置
-            if load_btn and selected_config_name != "-- 新建配置 --":
+            if load_btn and selected_config_name != NEW_CONFIG_OPTION:
                 loaded_funds = config_manager.load_config(selected_config_name)
                 if loaded_funds is not None:
                     st.session_state.abnormal_selected_funds = loaded_funds

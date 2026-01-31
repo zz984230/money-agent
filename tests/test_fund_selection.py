@@ -232,3 +232,76 @@ def test_fund_selection_config_dataclass():
     assert recreated.name == "测试"
     assert len(recreated.funds) == 2
     assert recreated.funds[0]["code"] == "161226"
+
+
+def test_validate_config_name_valid(manager, sample_funds):
+    """Test validation accepts valid config names"""
+    # Valid names
+    valid_names = [
+        "白银精选",
+        "Silver Fund",
+        "silver-fund",
+        "silver_fund",
+        "白银基金123"
+    ]
+
+    for name in valid_names:
+        is_valid, error = manager._validate_config_name(name)
+        assert is_valid is True, f"Name '{name}' should be valid: {error}"
+        assert error is None
+
+
+def test_validate_config_name_invalid(manager):
+    """Test validation rejects invalid config names"""
+    # Invalid: empty
+    is_valid, error = manager._validate_config_name("")
+    assert is_valid is False
+    assert "不能为空" in error
+
+    # Invalid: whitespace only
+    is_valid, error = manager._validate_config_name("   ")
+    assert is_valid is False
+    assert "不能为空" in error
+
+    # Invalid: special characters
+    invalid_names = [
+        "白银/精选",  # slash
+        "白银:精选",  # colon
+        "白银*精选",  # asterisk
+        "白银?精选",  # question mark
+        "白银<精选",  # angle bracket
+        "白银>精选",  # angle bracket
+        "白银|精选",  # pipe
+        '白银"精选',  # quote
+    ]
+
+    for name in invalid_names:
+        is_valid, error = manager._validate_config_name(name)
+        assert is_valid is False, f"Name '{name}' should be invalid"
+        assert "只能包含" in error
+
+    # Invalid: reserved name
+    is_valid, error = manager._validate_config_name("-- 新建配置 --")
+    assert is_valid is False
+    assert "保留名称" in error
+
+
+def test_validate_config_name_too_long(manager):
+    """Test validation rejects names exceeding max length"""
+    # Create a name that exceeds CONFIG_NAME_MAX_LENGTH (50)
+    long_name = "a" * 51
+    is_valid, error = manager._validate_config_name(long_name)
+    assert is_valid is False
+    assert "不能超过" in error
+    assert "50" in error
+
+
+def test_save_config_with_invalid_name(manager, sample_funds):
+    """Test saving config with invalid name returns False"""
+    # Try to save with invalid name
+    result = manager.save_config("白银/精选", sample_funds)
+    assert result is False
+
+    # Verify no config was created
+    configs = manager.list_configs()
+    assert len(configs) == 0
