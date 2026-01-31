@@ -1094,7 +1094,9 @@ def render_abnormal_screening_page(gamble_analyzer):
                     detail_text.markdown(f"**{message}: {detail}**")
 
             results = screen_and_analyze_with_mode(
-                gamble_analyzer, criteria, top_n, scan_mode, progress_callback=update_progress
+                gamble_analyzer, criteria, top_n, scan_mode,
+                selected_funds=user_selected_funds if user_selected_funds else None,
+                progress_callback=update_progress
             )
 
             # 完成状态
