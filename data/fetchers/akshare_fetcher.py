@@ -722,63 +722,33 @@ class AKShareFetcher:
 
     def get_lof_list(self) -> pd.DataFrame:
         """
-        获取所有LOF基金列表
+        获取所有LOF基金列表（从新浪财经动态获取）
 
         Returns:
             DataFrame with columns: code, name, fund_type
         """
         try:
-            # 使用基金搜索接口获取LOF列表
-            # 先获取开放式基金列表，然后筛选LOF
-            df = ak.fund_open_fund_info_em(fund="LOF", indicator="单位净值走势")
+            # 使用新浪财经接口获取LOF列表（更稳定）
+            df = ak.fund_etf_category_sina(symbol="LOF基金")
 
             if df is None or df.empty:
-                # 备用方法：尝试使用其他接口
-                logger.warning("fund_open_fund_info_em接口失败，尝试备用方法")
+                logger.warning("获取LOF列表失败，返回空DataFrame")
                 return pd.DataFrame(columns=['code', 'name', 'fund_type'])
 
-            # 提取LOF基金代码和名称
+            # 处理列名：新浪返回的是中文列名，需要提取代码和名称
+            # 假设第一列是代码（带sh/sz前缀），第二列是名称
             lof_list = []
-            # 常见LOF代码前缀和知名LOF（包含更多商品LOF）
-            known_lof = [
-                # 商品类LOF - 黄金/贵金属
-                ('161116', '黄金基金'),
-                ('518880', '黄金ETF'),
-                ('159998', '黄金ETF'),
-                ('159937', '黄金ETF'),
+            for _, row in df.iterrows():
+                # 获取代码列（第一列）和名称列（第二列）
+                code_col = df.columns[0]
+                name_col = df.columns[1]
 
-                # 商品类LOF - 白银/有色
-                ('163415', '白银LOF'),
-                ('161226', '白银LOF'),
-                ('161215', '白银基金'),
+                raw_code = str(row[code_col])
+                name = str(row[name_col])
 
-                # 商品类LOF - 油气/能源
-                ('162411', '华宝油气'),
-                ('160416', '油气基金'),
-                ('162719', '石油基金'),
-                ('160613', '鹏华钢铁'),
-                ('165513', '信诚商品'),
+                # 去除sh/sz前缀
+                code = raw_code.replace('sh', '').replace('sz', '')
 
-                # 商品类LOF - 大宗商品/资源
-                ('160723', '大宗商品'),
-                ('161217', '国泰商品'),
-                ('161025', '大宗商品'),
-                ('163812', '资源LOF'),
-                ('161815', '资源优选'),
-
-                # 海外指数LOF
-                ('164901', '海外中国'),
-                ('162715', '纳指LOF'),
-                ('165510', '标普LOF'),
-                ('166105', '海外科技'),
-                ('166106', '海外消费'),
-
-                # 其他常见LOF
-                ('160716', '嘉实沪深300ETF联接'),
-                ('163407', '兴全合润'),
-            ]
-
-            for code, name in known_lof:
                 lof_list.append({
                     'code': code,
                     'name': name,
@@ -791,50 +761,7 @@ class AKShareFetcher:
 
         except Exception as e:
             logger.error(f"获取LOF列表失败: {e}", exc_info=True)
-            # 返回预设的LOF列表作为备用（扩展版）
-            lof_list = [
-                # 商品类LOF - 黄金/贵金属
-                ('161116', '黄金基金'),
-                ('518880', '黄金ETF'),
-                ('159998', '黄金ETF'),
-                ('159937', '黄金ETF'),
-
-                # 商品类LOF - 白银/有色
-                ('163415', '白银LOF'),
-                ('161226', '白银LOF'),
-                ('161215', '白银基金'),
-
-                # 商品类LOF - 油气/能源
-                ('162411', '华宝油气'),
-                ('160416', '油气基金'),
-                ('162719', '石油基金'),
-                ('160613', '鹏华钢铁'),
-                ('165513', '信诚商品'),
-
-                # 商品类LOF - 大宗商品/资源
-                ('160723', '大宗商品'),
-                ('161217', '国泰商品'),
-                ('161025', '大宗商品'),
-                ('163812', '资源LOF'),
-                ('161815', '资源优选'),
-
-                # 海外指数LOF
-                ('164901', '海外中国'),
-                ('162715', '纳指LOF'),
-                ('165510', '标普LOF'),
-                ('166105', '海外科技'),
-                ('166106', '海外消费'),
-
-                # 其他常见LOF
-                ('160716', '嘉实300'),
-                ('163407', '兴全合润'),
-            ]
-            lof_df = pd.DataFrame([
-                {'code': code, 'name': name, 'fund_type': 'LOF'}
-                for code, name in lof_list
-            ])
-            logger.info(f"使用备用LOF列表，共 {len(lof_df)} 只")
-            return lof_df
+            return pd.DataFrame(columns=['code', 'name', 'fund_type'])
 
     def get_commodity_lof_list(self) -> List[Dict]:
         """
@@ -916,49 +843,8 @@ class AKShareFetcher:
             return overseas_etf
         except Exception as e:
             logger.error(f"获取海外ETF列表失败: {e}", exc_info=True)
-            # 返回预设的海外ETF列表作为备用
-            overseas_etf = [
-                # 美国科技股 - 波动较大
-                ('513100', '纳斯达克ETF'),
-                ('159941', '纳斯达克100'),
-                ('513500', '标普500ETF'),
-                ('513680', '标普科技ETF'),
-
-                # 商品/原油ETF - 波动大
-                ('513350', '标普油气ETF'),
-                ('162411', '华宝油气'),
-                ('160416', '油气基金'),
-
-                # 日本
-                ('513000', '日经225ETF'),
-                ('513280', '日经225ETF'),
-
-                # 亚洲市场
-                ('513600', '南方恒生ETF'),
-                ('159920', '恒生ETF'),
-                ('513650', '恒生科技ETF'),
-                ('513180', '恒生互联网'),
-                ('159760', '港股科技ETF'),
-
-                # 欧洲
-                ('513030', '德国DAX'),
-                ('513020', '欧洲股票'),
-
-                # 全球/新兴市场
-                ('513900', '香港证券ETF'),
-                ('513800', '亚洲精选'),
-                ('513200', '亚太股票'),
-
-                # 黄金/贵金属ETF
-                ('518880', '黄金ETF'),
-                ('159998', '黄金ETF'),
-                ('159937', '黄金ETF'),
-                ('159934', '白银ETF'),
-            ]
-            return [
-                {'code': code, 'name': name, 'type': 'ETF'}
-                for code, name in overseas_etf
-            ]
+            # 返回空列表，不再使用可能错误的备用数据
+            return []
 
     def get_lof_etf_history(self, symbol: str, period: int = 100) -> Optional[pd.DataFrame]:
         """
