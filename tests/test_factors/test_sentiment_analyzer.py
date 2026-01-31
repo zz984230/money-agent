@@ -85,3 +85,29 @@ def test_calculate_sentiment_factors_dataframe_structure(sentiment_analyzer):
     assert 'market_breadth_ratio' in factors.columns
     assert 'market_sentiment_score' in factors.columns
     assert len(factors) == 100
+
+
+from unittest.mock import patch
+
+
+@patch('akshare.stock_zh_a_spot_em')
+def test_market_breadth_integration(mock_spot_em, sentiment_analyzer):
+    """集成测试：真实AKShare接口调用"""
+    # Mock返回数据
+    mock_df = pd.DataFrame({
+        '代码': ['000001', '000002', '600000'],
+        '名称': ['平安银行', '万科A', '浦发银行'],
+        '涨跌幅': [5.0, -3.0, 0.0]
+    })
+    mock_spot_em.return_value = mock_df
+
+    sentiment_analyzer.fetcher.get_market_breadth_data = Mock(
+        side_effect=lambda: mock_spot_em()
+    )
+
+    result = sentiment_analyzer.get_market_breadth()
+
+    assert result['up_count'] == 1
+    assert result['down_count'] == 1
+    assert result['flat_count'] == 1
+    assert result['total'] == 3

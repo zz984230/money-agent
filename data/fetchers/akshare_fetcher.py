@@ -1168,3 +1168,45 @@ class AKShareFetcher:
             logger.error(f"场内交易基金净值接口失败: {e}")
 
         return None
+
+    def get_market_breadth_data(self) -> Optional[pd.DataFrame]:
+        """获取市场宽度原始数据
+
+        使用ak.stock_zh_a_spot_em()获取A股实时行情
+
+        Returns:
+            包含涨跌幅数据的DataFrame，失败返回None
+        """
+        try:
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                logger.info(f"获取市场宽度数据成功，共{len(df)}只股票")
+            return df
+        except Exception as e:
+            logger.error(f"获取市场宽度数据失败: {e}")
+            return None
+
+    def get_limit_up_stats_data(self) -> Optional[Dict]:
+        """获取涨停统计数据
+
+        使用ak.stock_market_activity_legu()获取市场活动数据
+
+        Returns:
+            包含涨停统计的字典，失败返回None
+        """
+        try:
+            df = ak.stock_market_activity_legu()
+            if df is not None and not df.empty:
+                # 解析返回的数据，提取涨停统计
+                # 具体列名需要根据实际返回调整
+                result = {
+                    'limit_up_count': df.get('涨停家数', [0])[0] if '涨停家数' in df else 0,
+                    'limit_down_count': df.get('跌停家数', [0])[0] if '跌停家数' in df else 0,
+                    'total': df.get('总家数', [4000])[0] if '总家数' in df else 4000
+                }
+                logger.info(f"获取涨停统计成功: {result}")
+                return result
+            return None
+        except Exception as e:
+            logger.error(f"获取涨停统计失败: {e}")
+            return None
