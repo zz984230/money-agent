@@ -57,8 +57,15 @@ class ETFLOFSpecificAnalyzer:
                 logger.warning(f"{symbol} 净值或行情数据为空")
                 return None
 
-            price = quote.get('price', nav)
-            return self._calc_premium_rate(price, nav)
+            # Extract numeric values from dictionaries
+            nav_value = nav.get('unit_net_value') if isinstance(nav, dict) else nav
+            price_value = quote.get('current_price') if isinstance(quote, dict) else quote
+
+            if nav_value is None or price_value is None:
+                logger.warning(f"{symbol} 无法提取净值或价格")
+                return None
+
+            return self._calc_premium_rate(float(price_value), float(nav_value))
 
         except Exception as e:
             logger.error(f"获取{symbol}溢价率失败: {e}", exc_info=True)
