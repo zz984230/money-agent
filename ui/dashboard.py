@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import sys
+import threading
 from pathlib import Path
 from typing import List, Dict, Callable, Optional
 
@@ -957,6 +958,8 @@ def render_abnormal_screening_page(gamble_analyzer):
                 loaded_funds = config_manager.load_config(selected_config_name)
                 if loaded_funds is not None:
                     st.session_state.abnormal_selected_funds = loaded_funds
+                    # 同步到穿梭框使用的session_state key
+                    st.session_state.abnormal_fund_select_selected = loaded_funds
                     st.success(f"✅ 已加载配置：{selected_config_name}（{len(loaded_funds)}只基金）")
                 else:
                     st.error(f"❌ 加载配置失败：{selected_config_name}")
@@ -981,55 +984,68 @@ def render_abnormal_screening_page(gamble_analyzer):
             st.markdown("#### 选择标的")
             user_selected_funds = render_fund_selection_box(all_funds, key_prefix="abnormal_fund_select")
 
-            # 同步到session_state供保存使用
-            st.session_state.abnormal_selected_funds = user_selected_funds
-
         except Exception as e:
             st.warning(f"获取基金列表失败: {str(e)}")
 
         st.markdown("---")
 
-    with st.form("abnormal_screening_form"):
-        col1, col2, col3 = st.columns(3)
+    # 使用两栏布局：表单在左，停止按钮在右
+    col_form, col_stop = st.columns([10, 1])
 
-        with col1:
-            # 多窗口模式开关
-            multi_window_mode = st.checkbox(
-                "多窗口检测",
-                value=True,
-                help="开启后同时检测2/3/5天窗口，任意满足即触发"
-            )
+    with col_form:
+        with st.form("abnormal_screening_form"):
+            col1, col2, col3 = st.columns(3)
 
-            if multi_window_mode:
-                window = None
-                st.info("将同时检测 2/3/5 天窗口")
-            else:
-                window = st.selectbox(
-                    "时间窗口",
-                    options=[2, 3, 5],
-                    format_func=lambda x: f"{x}天",
-                    index=1  # 默认3天
+            with col1:
+                # 多窗口模式开关
+                multi_window_mode = st.checkbox(
+                    "多窗口检测",
+                    value=True,
+                    help="开启后同时检测2/3/5天窗口，任意满足即触发"
                 )
 
-        with col2:
-            threshold = st.slider(
-                "波动阈值 (%)",
-                min_value=3,
-                max_value=30,
-                value=8,
-                help="累计涨跌幅超过此百分比视为异常（建议：市场平稳时用3-8%，波动大时用10%+）"
-            )
+                if multi_window_mode:
+                    window = None
+                    st.info("将同时检测 2/3/5 天窗口")
+                else:
+                    window = st.selectbox(
+                        "时间窗口",
+                        options=[2, 3, 5],
+                        format_func=lambda x: f"{x}天",
+                        index=1  # 默认3天
+                    )
 
-        with col3:
-            fund_types = st.multiselect(
-                "标的选择",
-                options=["大宗商品LOF", "海外ETF"],
-                default=["大宗商品LOF", "海外ETF"]
-            )
+            with col2:
+                threshold = st.slider(
+                    "波动阈值 (%)",
+                    min_value=3,
+                    max_value=30,
+                    value=8,
+                    help="累计涨跌幅超过此百分比视为异常（建议：市场平稳时用3-8%，波动大时用10%+）"
+                )
 
-        top_n = st.slider("返回数量", min_value=5, max_value=50, value=20)
+            with col3:
+                fund_types = st.multiselect(
+                    "标的选择",
+                    options=["大宗商品LOF", "海外ETF"],
+                    default=["大宗商品LOF", "海外ETF"]
+                )
 
-        submitted = st.form_submit_button("开始筛选", use_container_width=True)
+            top_n = st.slider("返回数量", min_value=5, max_value=50, value=20)
+
+            # 按钮行：两栏布局
+            col_btn_start, col_btn_stop = st.columns([4, 1])
+            with col_btn_start:
+                submitted = st.form_submit_button("开始筛选", use_container_width=True)
+            with col_btn_stop:
+                # 停止按钮也在表单内（使用 form_submit_button 以便响应点击）
+                stop_submitted = st.form_submit_button("⏹️ 停止", use_container_width=True)
+
+        # 处理停止按钮点击
+        if stop_submitted:
+            st.session_state.abnormal_stop_requested = True
+            st.warning("⏹️ 正在停止任务...")
+            st.rerun()
 
     if submitted:
         if not fund_types:
@@ -1070,6 +1086,13 @@ def render_abnormal_screening_page(gamble_analyzer):
         st.dataframe(criteria_df, use_container_width=True, hide_index=True)
 
         # 执行筛选
+        # 初始化任务状态
+        st.session_state.abnormal_task_running = True
+        st.session_state.abnormal_stop_requested = False
+
+        # 创建停止控制器
+        stop_controller = StopController()
+
         # 创建可折叠的状态容器
         status_container = st.status(
             label="📊 开始筛选...",
@@ -1085,6 +1108,11 @@ def render_abnormal_screening_page(gamble_analyzer):
             # 定义进度回调函数
             def update_progress(progress: float, message: str, detail: Optional[str] = None,
                                current: Optional[int] = None, total: Optional[int] = None):
+                # 检查是否请求停止（通过 session_state）
+                if st.session_state.get('abnormal_stop_requested', False):
+                    stop_controller.request_stop()
+                    raise StopIteration("用户请求停止任务")
+
                 progress_bar.progress(progress, text=message)
                 if detail and current and total:
                     detail_text.markdown(f"**{message}: {detail} ({current}/{total})**")
@@ -1095,8 +1123,9 @@ def render_abnormal_screening_page(gamble_analyzer):
 
             results = screen_and_analyze_with_mode(
                 gamble_analyzer, criteria, top_n, scan_mode,
-                selected_funds=user_selected_funds if user_selected_funds else None,
-                progress_callback=update_progress
+                selected_funds=user_selected_funds if user_selected_funds and len(user_selected_funds) > 0 else None,
+                progress_callback=update_progress,
+                stop_controller=stop_controller
             )
 
             # 完成状态
@@ -1116,6 +1145,13 @@ def render_abnormal_screening_page(gamble_analyzer):
                 )
                 st.markdown("<p>请尝试调整筛选条件...</p>", unsafe_allow_html=True)
 
+        except StopIteration as e:
+            status_container.update(
+                label="⏹️ 任务已停止",
+                state="complete",
+                expanded=True
+            )
+            st.markdown(f"<p>{str(e)}</p>", unsafe_allow_html=True)
         except Exception as e:
             status_container.update(
                 label="❌ 筛选失败",
@@ -1123,6 +1159,10 @@ def render_abnormal_screening_page(gamble_analyzer):
                 expanded=True
             )
             st.markdown(f"<p>错误信息: {str(e)}</p>", unsafe_allow_html=True)
+        finally:
+            # 清除任务运行状态
+            st.session_state.abnormal_task_running = False
+            st.session_state.abnormal_stop_requested = False
 
 
 def display_screening_results(results):
@@ -1608,7 +1648,25 @@ def render_fund_selection_box(all_funds: List[Dict], key_prefix: str = "fund_sel
     return st.session_state[state_key]
 
 
-def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, selected_funds: Optional[List[Dict]] = None, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
+class StopController:
+    """线程安全的停止控制器"""
+    def __init__(self):
+        self._stop_event = threading.Event()
+
+    def request_stop(self):
+        """请求停止"""
+        self._stop_event.set()
+
+    def is_stop_requested(self):
+        """检查是否请求停止"""
+        return self._stop_event.is_set()
+
+    def reset(self):
+        """重置停止标志"""
+        self._stop_event.clear()
+
+
+def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, selected_funds: Optional[List[Dict]] = None, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None, stop_controller: Optional[StopController] = None) -> List:
     """
     根据筛选模式执行分析
 
@@ -1661,10 +1719,12 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
 
     # 使用分析器的内部逻辑进行筛选和深度分析
     # 这里复用 screen_and_analyze 的逻辑，但传入已获取的 target_list
-    return _screen_and_analyze_with_targets(_analyzer, target_list, criteria, top_n, progress_callback)
+    # 如果用户预选了基金，则扫描所有预选基金，否则限制扫描数量为 top_n * 3
+    is_user_selected = selected_funds is not None
+    return _screen_and_analyze_with_targets(_analyzer, target_list, criteria, top_n, progress_callback, is_user_selected, stop_controller)
 
 
-def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
+def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None, is_user_selected: bool = False, stop_controller: Optional[StopController] = None) -> List:
     """
     使用给定的目标列表进行筛选分析（内部函数）
 
@@ -1674,6 +1734,8 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
         criteria: 筛选条件
         top_n: 返回数量
         progress_callback: 进度回调函数，接收 (progress: float, message: str, name: Optional[str], current: Optional[int], total: Optional[int])
+        is_user_selected: 是否为用户预选的基金（True时不限制扫描数量）
+        stop_controller: 停止控制器（用于中断任务）
 
     Returns:
         分析结果列表
@@ -1693,22 +1755,32 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     logger = logging.getLogger(__name__)
     logger.info(f"开始筛选分析，使用{len(target_list)}个目标标的，阈值={threshold*100}%")
 
+    # 使用传入的停止控制器，或创建新的
+    if stop_controller is None:
+        stop_controller = StopController()
+
     # 快速筛选：检测异常波动（使用并发加速）
     screened = []
-    items_to_scan = list(enumerate(target_list[:top_n * 3]))
+    # 如果是用户预选的基金，扫描所有；否则限制为 top_n * 3 以提高效率
+    scan_limit = len(target_list) if is_user_selected else top_n * 3
+    items_to_scan = list(enumerate(target_list[:scan_limit]))
     total_to_scan = len(items_to_scan)
     completed_count = [0]  # 使用列表以便在闭包中修改
     progress_lock = threading.Lock()
 
     def scan_single_item(idx_item):
         """扫描单个标的"""
+        # 检查停止标志
+        if stop_controller.is_stop_requested():
+            return None
+
         idx, item = idx_item
         symbol = item['code']
         name = item['name']
         fund_type = item['type']
 
         try:
-            df = _analyzer.fetcher.get_lof_etf_history(symbol, period=100)
+            df = _analyzer.fetcher.get_lof_etf_history(symbol, period=200)
             if df is None or len(df) < 50:
                 return None
 
@@ -1770,6 +1842,10 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
 
     def analyze_single_target(target):
         """分析单个标的"""
+        # 检查停止标志
+        if stop_controller.is_stop_requested():
+            return None
+
         try:
             result = _analyzer.analyze_single(
                 target['symbol'],

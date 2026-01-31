@@ -454,7 +454,7 @@ class LOFETFGambleAnalyzer:
         logger.info(f"开始分析 {name} ({symbol})")
 
         # 1. 获取历史数据
-        df = self.fetcher.get_lof_etf_history(symbol, period=100)
+        df = self.fetcher.get_lof_etf_history(symbol, period=200)
         if df is None or len(df) < 50:
             logger.warning(f"{symbol} 数据不足，跳过")
             return None
@@ -595,8 +595,8 @@ class LOFETFGambleAnalyzer:
                 )
 
             try:
-                # 使用100天历史数据
-                df = self.fetcher.get_lof_etf_history(symbol, period=100)
+                # 使用200天历史数据
+                df = self.fetcher.get_lof_etf_history(symbol, period=200)
                 if df is None or len(df) < 50:
                     continue
 
