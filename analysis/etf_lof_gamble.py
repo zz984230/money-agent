@@ -525,7 +525,7 @@ class LOFETFGambleAnalyzer:
         self,
         criteria: Optional[Dict] = None,
         top_n: int = 20,
-        progress_callback: Optional[Callable[[float, str], None]] = None
+        progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None
     ) -> List[GambleAnalysisResult]:
         """
         筛选并对多个标的进行AI分析
@@ -537,7 +537,12 @@ class LOFETFGambleAnalyzer:
                 - threshold: 波动阈值（默认0.15）
                 - fund_types: 基金类型列表 ['LOF', 'ETF'] 或 ['commodity', 'overseas']
             top_n: 返回数量
-            progress_callback: 进度回调函数，接收(progress_pct, message)参数
+            progress_callback: 进度回调函数，接收参数:
+                - progress (float): 进度百分比 0.0-1.0
+                - message (str): 主要消息
+                - detail (Optional[str]): 当前处理的标的名称
+                - current (Optional[int]): 当前索引
+                - total (Optional[int]): 总数
 
         Returns:
             分析结果列表
