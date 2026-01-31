@@ -88,15 +88,19 @@ class SentimentAnalyzer:
         try:
             data = self.fetcher.get_limit_up_stats_data()
 
-            if data is None or data.empty:
+            if data is None:
                 return self._get_default_limit_up_stats()
 
-            # 假设数据包含涨停和跌停统计
+            # data是一个字典，包含涨停和跌停统计
+            total = data.get('total', 1)
+            limit_up_count = data.get('limit_up_count', 0)
+            limit_down_count = data.get('limit_down_count', 0)
+
             result = {
-                'limit_up_count': data.get('limit_up_count', 0),
-                'limit_up_ratio': data.get('limit_up_count', 0) / data.get('total', 1),
-                'limit_down_count': data.get('limit_down_count', 0),
-                'limit_down_ratio': data.get('limit_down_count', 0) / data.get('total', 1)
+                'limit_up_count': limit_up_count,
+                'limit_up_ratio': limit_up_count / total if total > 0 else 0,
+                'limit_down_count': limit_down_count,
+                'limit_down_ratio': limit_down_count / total if total > 0 else 0
             }
 
             return result
@@ -217,9 +221,13 @@ class SentimentAnalyzer:
 
     def _get_default_limit_up_stats(self) -> Dict[str, Any]:
         """获取默认涨停统计数据"""
+        total = 4200
+        limit_up_count = 30
+        limit_down_count = 20
         return {
-            'limit_up_count': 30,
-            'limit_up_ratio': 0.007,
-            'limit_down_count': 20,
-            'limit_down_ratio': 0.005
+            'limit_up_count': limit_up_count,
+            'limit_up_ratio': limit_up_count / total,
+            'limit_down_count': limit_down_count,
+            'limit_down_ratio': limit_down_count / total,
+            'total': total
         }

@@ -111,3 +111,36 @@ def test_market_breadth_integration(mock_spot_em, sentiment_analyzer):
     assert result['down_count'] == 1
     assert result['flat_count'] == 1
     assert result['total'] == 3
+
+
+def test_get_limit_up_stats(sentiment_analyzer):
+    """测试涨停统计数据获取"""
+    # Mock返回数据（get_limit_up_stats_data返回处理后的字典格式）
+    mock_data = {
+        'limit_up_count': 50,
+        'limit_down_count': 10,
+        'total': 4200
+    }
+    sentiment_analyzer.fetcher.get_limit_up_stats_data = Mock(return_value=mock_data)
+
+    result = sentiment_analyzer.get_limit_up_stats()
+
+    assert result['limit_up_count'] == 50
+    assert result['limit_down_count'] == 10
+    assert result['limit_up_ratio'] == 50 / 4200
+    assert result['limit_down_ratio'] == 10 / 4200
+
+
+def test_get_limit_up_stats_with_empty_data(sentiment_analyzer):
+    """测试涨停统计数据获取异常情况"""
+    # Mock返回空数据
+    sentiment_analyzer.fetcher.get_limit_up_stats_data = Mock(return_value=None)
+
+    result = sentiment_analyzer.get_limit_up_stats()
+
+    # 应该返回默认值
+    assert result['limit_up_count'] == 30
+    assert result['limit_down_count'] == 20
+    # get_limit_up_stats会计算ratio，默认值中total=4200
+    assert abs(result['limit_up_ratio'] - 30 / 4200) < 0.0001
+    assert abs(result['limit_down_ratio'] - 20 / 4200) < 0.0001

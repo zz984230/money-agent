@@ -1183,7 +1183,7 @@ class AKShareFetcher:
                 logger.info(f"获取市场宽度数据成功，共{len(df)}只股票")
             return df
         except Exception as e:
-            logger.error(f"获取市场宽度数据失败: {e}")
+            logger.error(f"获取市场宽度数据失败: {e}", exc_info=True)
             return None
 
     def get_limit_up_stats_data(self) -> Optional[Dict]:
@@ -1195,18 +1195,32 @@ class AKShareFetcher:
             包含涨停统计的字典，失败返回None
         """
         try:
-            df = ak.stock_market_activity_legu()
-            if df is not None and not df.empty:
-                # 解析返回的数据，提取涨停统计
-                # 具体列名需要根据实际返回调整
+            data = ak.stock_market_activity_legu()
+            if data is None:
+                return None
+
+            # ak.stock_market_activity_legu()可能返回DataFrame或字典
+            if isinstance(data, pd.DataFrame):
+                if data.empty:
+                    return None
+                # DataFrame格式：转换为字典
                 result = {
-                    'limit_up_count': df.get('涨停家数', [0])[0] if '涨停家数' in df else 0,
-                    'limit_down_count': df.get('跌停家数', [0])[0] if '跌停家数' in df else 0,
-                    'total': df.get('总家数', [4000])[0] if '总家数' in df else 4000
+                    'limit_up_count': int(data['涨停家数'].iloc[0]) if '涨停家数' in data.columns else 0,
+                    'limit_down_count': int(data['跌停家数'].iloc[0]) if '跌停家数' in data.columns else 0,
+                    'total': int(data['总家数'].iloc[0]) if '总家数' in data.columns else 4000
                 }
-                logger.info(f"获取涨停统计成功: {result}")
-                return result
-            return None
+            elif isinstance(data, dict):
+                # 字典格式：直接处理
+                result = {
+                    'limit_up_count': int(data.get('涨停家数', [0])[0]) if '涨停家数' in data and len(data.get('涨停家数', [])) > 0 else 0,
+                    'limit_down_count': int(data.get('跌停家数', [0])[0]) if '跌停家数' in data and len(data.get('跌停家数', [])) > 0 else 0,
+                    'total': int(data.get('总家数', [4000])[0]) if '总家数' in data and len(data.get('总家数', [])) > 0 else 4000
+                }
+            else:
+                return None
+
+            logger.info(f"获取涨停统计成功: {result}")
+            return result
         except Exception as e:
-            logger.error(f"获取涨停统计失败: {e}")
+            logger.error(f"获取涨停统计失败: {e}", exc_info=True)
             return None
