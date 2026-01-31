@@ -640,7 +640,13 @@ class LOFETFGambleAnalyzer:
             # 进度回调: 分析阶段 (40-100%)
             if progress_callback:
                 progress = 0.4 + (i + 1) / total * 0.6
-                progress_callback(progress, f"分析中... {target['name']} ({i+1}/{total})")
+                progress_callback(
+                    progress,
+                    "🤖 分析中...",
+                    target['name'],  # 当前标的名称
+                    i + 1,           # 当前索引
+                    total            # 总数
+                )
 
             try:
                 result = self.analyze_single(
