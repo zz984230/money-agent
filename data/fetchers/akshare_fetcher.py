@@ -1104,7 +1104,7 @@ class AKShareFetcher:
         except Exception as e:
             logger.error(f"分钟数据接口失败: {e}")
 
-        # 方法3: sina备用接口
+        # 方法3: sina备用接口（只适用于ETF，不适用于LOF）
         try:
             df = ak.fund_etf_hist_sina(symbol=symbol)
             if df is not None and len(df) > 0:
@@ -1128,5 +1128,43 @@ class AKShareFetcher:
                 return df
         except Exception as e:
             logger.error(f"sina接口失败: {e}")
+
+        # 方法4: 场内交易基金历史净值接口（适用于LOF和ETF）
+        # 这个接口获取的是净值数据而非市场价格，但对波动分析仍然有效
+        try:
+            logger.info(f"尝试使用场内交易基金净值接口获取 {symbol}...")
+            time.sleep(1)
+
+            df_nav = ak.fund_etf_fund_info_em(fund=symbol, start_date=start_date, end_date=end_date)
+            if df_nav is not None and len(df_nav) > 0:
+                # 转换列名：净值日期->date, 单位净值->close
+                df_nav = df_nav.rename(columns={
+                    '净值日期': 'date',
+                    '单位净值': 'close',
+                    '累计净值': 'accum_nav',
+                    '日增长率': 'daily_return'
+                })
+                df_nav['date'] = pd.to_datetime(df_nav['date'])
+                df_nav.set_index('date', inplace=True)
+
+                # 净值数据没有OHLC，用净值填充
+                df_nav['open'] = df_nav['close']
+                df_nav['high'] = df_nav['close']
+                df_nav['low'] = df_nav['close']
+                df_nav['volume'] = 0
+                df_nav['amount'] = 0
+
+                # 筛选日期范围
+                df_nav = df_nav[(df_nav.index >= pd.to_datetime(start_date)) &
+                               (df_nav.index <= pd.to_datetime(end_date))]
+
+                # 选择需要的列
+                df_nav = df_nav[['open', 'close', 'high', 'low', 'volume', 'amount']]
+
+                logger.info(f"通过场内交易基金净值接口获取{symbol}成功，共{len(df_nav)}条记录")
+                return df_nav
+
+        except Exception as e:
+            logger.error(f"场内交易基金净值接口失败: {e}")
 
         return None

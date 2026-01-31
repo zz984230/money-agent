@@ -69,7 +69,7 @@ def test_get_lof_etf_history():
 
 def test_get_lof_etf_history_with_mock():
     """使用Mock测试历史数据获取"""
-    from unittest.mock import patch
+    from unittest.mock import patch, MagicMock
     from data.fetchers.akshare_fetcher import AKShareFetcher
 
     mock_data = pd.DataFrame({
@@ -84,8 +84,13 @@ def test_get_lof_etf_history_with_mock():
 
     fetcher = AKShareFetcher()
 
-    # Patch正确的函数名
-    with patch('data.fetchers.akshare_fetcher.ak.fund_etf_hist_em', return_value=mock_data):
+    # Mock all the fallback interfaces to prevent real API calls
+    # Note: 163415 starts with '16' so it's treated as LOF and calls fund_lof_hist_em
+    with patch('data.fetchers.akshare_fetcher.ak.fund_lof_hist_em', return_value=mock_data), \
+         patch('data.fetchers.akshare_fetcher.ak.fund_etf_hist_em', return_value=mock_data), \
+         patch('data.fetchers.akshare_fetcher.ak.fund_etf_hist_min_em', return_value=None), \
+         patch('data.fetchers.akshare_fetcher.ak.fund_etf_hist_sina', side_effect=Exception("Mocked")), \
+         patch('data.fetchers.akshare_fetcher.ak.fund_etf_fund_info_em', side_effect=Exception("Mocked")):
         result = fetcher.get_lof_etf_history('163415', period=30)
 
         assert result is not None
