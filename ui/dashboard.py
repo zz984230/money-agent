@@ -24,6 +24,7 @@ from analysis.convertible_technical_analysis import (
 )
 from analysis.etf_lof_gamble import LOFETFGambleAnalyzer
 from storage.analysis_history import AnalysisHistoryEntry
+from storage.fund_selection import FundSelectionManager
 
 # 页面配置
 st.set_page_config(
@@ -907,42 +908,83 @@ def render_abnormal_screening_page(gamble_analyzer):
         help="使用缓存：基于已缓存的基金列表计算；重新扫描：重新获取基金列表并更新缓存"
     )
 
-    # 显示缓存的基金列表（仅在使用缓存模式时）
+    # 获取配置管理器
+    cache_dir = Path(__file__).parent.parent / ".cache" / "streamlit"
+    config_manager = FundSelectionManager(cache_dir)
+
+    # 用户选中的基金列表（用于后续分析）
+    user_selected_funds = None
+
+    # 【新增】查询配置区域（仅在使用缓存模式时显示）
     if scan_mode == "use_cache":
-        with st.expander("📋 查看缓存的基金列表", expanded=False):
-            try:
-                from data.fetchers.akshare_fetcher import AKShareFetcher
-                fetcher = AKShareFetcher()
+        st.markdown("---")
+        st.markdown("### 📋 查询配置")
 
-                # 获取缓存的基金列表
-                commodity_list = cached_get_fund_list(fetcher, 'commodity')
-                overseas_list = cached_get_fund_list(fetcher, 'overseas')
+        # 配置选择器
+        col_config1, col_config2, col_config3 = st.columns([2, 2, 2])
+        with col_config1:
+            config_names = ["-- 新建配置 --"] + [c["name"] for c in config_manager.list_configs()]
+            selected_config_name = st.selectbox("加载配置", options=config_names, key="abnormal_config_selector")
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"**大宗商品LOF** ({len(commodity_list)}只)")
-                    if commodity_list:
-                        commodity_display = [f"{f['code']} - {f['name']}" for f in commodity_list]
-                        selected_commodity = st.selectbox(
-                            "选择查看",
-                            options=commodity_display,
-                            key="cache_commodity_select",
-                            label_visibility="collapsed"
-                        )
+        with col_config2:
+            config_name_input = st.text_input("配置名称", placeholder="输入配置名称（如：白银LOF组合）", key="abnormal_config_name_input")
 
-                with col2:
-                    st.markdown(f"**海外ETF** ({len(overseas_list)}只)")
-                    if overseas_list:
-                        overseas_display = [f"{f['code']} - {f['name']}" for f in overseas_list]
-                        selected_overseas = st.selectbox(
-                            "选择查看",
-                            options=overseas_display,
-                            key="cache_overseas_select",
-                            label_visibility="collapsed"
-                        )
+        with col_config3:
+            st.markdown("&nbsp;")
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                save_btn = st.button("💾 保存配置", key="abnormal_save_config", disabled=not config_name_input)
+            with col_btn2:
+                load_btn = st.button("📂 加载配置", key="abnormal_load_config", disabled=(selected_config_name == "-- 新建配置 --"))
 
-            except Exception as e:
-                st.warning(f"获取缓存列表失败: {str(e)}")
+        # 获取全部基金列表（用于穿梭框）
+        try:
+            from data.fetchers.akshare_fetcher import AKShareFetcher
+            fetcher = AKShareFetcher()
+            commodity_list = cached_get_fund_list(fetcher, 'commodity')
+            overseas_list = cached_get_fund_list(fetcher, 'overseas')
+            all_funds = commodity_list + overseas_list
+
+            # 初始化已选列表（如果加载了配置）
+            if "abnormal_selected_funds" not in st.session_state:
+                st.session_state.abnormal_selected_funds = []
+
+            # 处理加载配置
+            if load_btn and selected_config_name != "-- 新建配置 --":
+                loaded_funds = config_manager.load_config(selected_config_name)
+                if loaded_funds is not None:
+                    st.session_state.abnormal_selected_funds = loaded_funds
+                    st.success(f"✅ 已加载配置：{selected_config_name}（{len(loaded_funds)}只基金）")
+                else:
+                    st.error(f"❌ 加载配置失败：{selected_config_name}")
+
+            # 处理保存配置
+            if save_btn and config_name_input:
+                if st.session_state.abnormal_selected_funds:
+                    existing = config_manager.load_config(config_name_input)
+                    overwrite = False
+                    if existing is not None:
+                        overwrite = st.checkbox(f"配置 '{config_name_input}' 已存在，是否覆盖？", key="abnormal_overwrite_config")
+
+                    result = config_manager.save_config(config_name_input, st.session_state.abnormal_selected_funds, overwrite=overwrite)
+                    if result:
+                        st.success(f"✅ 配置已保存：{config_name_input}")
+                    else:
+                        st.error(f"❌ 保存配置失败（可能配置已存在且未选择覆盖）")
+                else:
+                    st.warning("⚠️ 请先选择基金后再保存配置")
+
+            # 渲染双栏穿梭框
+            st.markdown("#### 选择标的")
+            user_selected_funds = render_fund_selection_box(all_funds, key_prefix="abnormal_fund_select")
+
+            # 同步到session_state供保存使用
+            st.session_state.abnormal_selected_funds = user_selected_funds
+
+        except Exception as e:
+            st.warning(f"获取基金列表失败: {str(e)}")
+
+        st.markdown("---")
 
     with st.form("abnormal_screening_form"):
         col1, col2, col3 = st.columns(3)
