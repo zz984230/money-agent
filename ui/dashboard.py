@@ -988,50 +988,55 @@ def render_abnormal_screening_page(gamble_analyzer):
         st.dataframe(criteria_df, use_container_width=True, hide_index=True)
 
         # 执行筛选
-        # 创建进度占位符
-        progress_placeholder = st.empty()
+        # 创建可折叠的状态容器
+        status_container = st.status(
+            label="📊 开始筛选...",
+            state="running",
+            expanded=True
+        )
 
-        with progress_placeholder.container():
+        with status_container:
             progress_bar = st.progress(0, text="准备开始筛选...")
+            detail_text = st.empty()
 
         try:
             # 定义进度回调函数
-            def update_progress(progress: float, message: str):
+            def update_progress(progress: float, message: str, detail: Optional[str] = None,
+                               current: Optional[int] = None, total: Optional[int] = None):
                 progress_bar.progress(progress, text=message)
+                if detail and current and total:
+                    detail_text.markdown(f"**{message}: {detail} ({current}/{total})**")
+                else:
+                    detail_text.markdown(f"**{message}**")
 
             results = screen_and_analyze_with_mode(
                 gamble_analyzer, criteria, top_n, scan_mode, progress_callback=update_progress
             )
 
-            # 清除进度条
-            progress_placeholder.empty()
-
+            # 完成状态
             if results:
-                st.markdown(f"""
-                <div class="success-box">
-                    <h4>筛选完成！找到 {len(results)} 个异常波动标的</h4>
-                </div>
-                """, unsafe_allow_html=True)
-
+                status_container.update(
+                    label=f"✅ 筛选完成！找到 {len(results)} 个异常波动标的",
+                    state="complete",
+                    expanded=False
+                )
                 # 显示结果列表
                 display_screening_results(results)
-
             else:
-                st.markdown("""
-                <div class="warning-box">
-                    <h4>未找到符合条件的标的</h4>
-                    <p>请尝试调整筛选条件...</p>
-                </div>
-                """, unsafe_allow_html=True)
+                status_container.update(
+                    label="⚠️ 未找到符合条件的标的",
+                    state="warning",
+                    expanded=True
+                )
+                st.markdown("<p>请尝试调整筛选条件...</p>", unsafe_allow_html=True)
 
         except Exception as e:
-            progress_placeholder.empty()
-            st.markdown(f"""
-            <div class="error-box">
-                <h4>筛选失败</h4>
-                <p>错误信息: {str(e)}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            status_container.update(
+                label="❌ 筛选失败",
+                state="error",
+                expanded=True
+            )
+            st.markdown(f"<p>错误信息: {str(e)}</p>", unsafe_allow_html=True)
 
 
 def display_screening_results(results):
