@@ -586,7 +586,13 @@ class LOFETFGambleAnalyzer:
             # 进度回调: 筛选阶段 (0-40%)
             if progress_callback:
                 progress = (i + 1) / total * 0.4
-                progress_callback(progress, f"筛选中... {i+1}/{total}")
+                progress_callback(
+                    progress,
+                    "📊 筛选中...",
+                    name,      # 当前标的名称
+                    i + 1,     # 当前索引
+                    total      # 总数
+                )
 
             try:
                 # 使用100天历史数据
