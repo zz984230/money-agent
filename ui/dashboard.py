@@ -1384,7 +1384,7 @@ def cached_get_fund_list(_fetcher, fund_type: str, _force_refresh: bool = False)
         return []
 
 
-def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, progress_callback: Optional[Callable[[float, str], None]] = None) -> List:
+def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mode: str, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
     """
     根据筛选模式执行分析
 
@@ -1393,7 +1393,7 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
         criteria: 筛选条件
         top_n: 返回数量
         scan_mode: 'use_cache'（使用缓存）或 'rescan'（重新扫描）
-        progress_callback: 进度回调函数，接收 (progress: float, message: str)
+        progress_callback: 进度回调函数，接收 (progress: float, message: str, name: Optional[str], current: Optional[int], total: Optional[int])
 
     Returns:
         分析结果列表
@@ -1409,7 +1409,7 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
     if scan_mode == 'rescan':
         # 重新扫描模式：使用时间戳绕过缓存，强制重新获取
         if progress_callback:
-            progress_callback(0.0, "🔄 正在重新扫描基金列表...")
+            progress_callback(0.0, "🔄 正在重新扫描基金列表...", None, None, None)
         else:
             st.info("🔄 正在重新扫描基金列表...")
         refresh_token = time.time()  # 使用时间戳作为唯一标识
@@ -1420,7 +1420,7 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
     else:
         # 使用缓存模式：直接从缓存获取
         if progress_callback:
-            progress_callback(0.0, "💾 使用缓存的基金列表...")
+            progress_callback(0.0, "💾 使用缓存的基金列表...", None, None, None)
         else:
             st.info("💾 使用缓存的基金列表...")
         for fund_type in fund_types:
@@ -1432,7 +1432,7 @@ def screen_and_analyze_with_mode(_analyzer, criteria: Dict, top_n: int, scan_mod
     return _screen_and_analyze_with_targets(_analyzer, target_list, criteria, top_n, progress_callback)
 
 
-def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int, progress_callback: Optional[Callable[[float, str], None]] = None) -> List:
+def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteria: Dict, top_n: int, progress_callback: Optional[Callable[[float, str, Optional[str], Optional[int], Optional[int]], None]] = None) -> List:
     """
     使用给定的目标列表进行筛选分析（内部函数）
 
@@ -1441,7 +1441,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
         target_list: 预先获取的基金列表
         criteria: 筛选条件
         top_n: 返回数量
-        progress_callback: 进度回调函数，接收 (progress: float, message: str)
+        progress_callback: 进度回调函数，接收 (progress: float, message: str, name: Optional[str], current: Optional[int], total: Optional[int])
 
     Returns:
         分析结果列表
@@ -1460,7 +1460,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
 
     # 快速筛选：检测异常波动
     if progress_callback:
-        progress_callback(0.1, f"📊 正在筛选 {len(target_list[:top_n * 3])} 个标的...")
+        progress_callback(0.1, f"📊 正在筛选 {len(target_list[:top_n * 3])} 个标的...", None, None, None)
 
     screened = []
     total_to_scan = len(target_list[:top_n * 3])
@@ -1496,7 +1496,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
             # 更新进度（筛选阶段占40%）
             if progress_callback and total_to_scan > 0:
                 progress = 0.1 + (idx + 1) / total_to_scan * 0.4
-                progress_callback(progress, f"📊 筛选进度: {idx + 1}/{total_to_scan} ({len(screened)} 个候选)")
+                progress_callback(progress, "📊 筛选中...", name, idx + 1, total_to_scan)
 
         except Exception as e:
             logger.error(f"筛选 {symbol} 失败: {e}")
@@ -1509,7 +1509,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
     logger.info(f"筛选出 {len(top_targets)} 个目标进行深度分析")
 
     if progress_callback:
-        progress_callback(0.5, f"🔍 开始深度分析 {len(top_targets)} 个候选标的...")
+        progress_callback(0.5, "🔍 深度分析", None, None, None)
 
     # 深度分析
     results = []
@@ -1518,7 +1518,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
             # 更新进度（深度分析阶段占50%）
             if progress_callback and len(top_targets) > 0:
                 progress = 0.5 + (idx + 1) / len(top_targets) * 0.5
-                progress_callback(progress, f"🤖 AI分析进度: {idx + 1}/{len(top_targets)} - {target['name']}")
+                progress_callback(progress, "🤖 分析中...", target['name'], idx + 1, len(top_targets))
 
             result = _analyzer.analyze_single(
                 target['symbol'],
@@ -1533,7 +1533,7 @@ def _screen_and_analyze_with_targets(_analyzer, target_list: List[Dict], criteri
             continue
 
     if progress_callback:
-        progress_callback(1.0, f"✅ 完成！共分析 {len(results)} 个标的")
+        progress_callback(1.0, "✅ 分析完成", None, None, None)
 
     logger.info(f"完成 {len(results)} 个标的的分析")
     return results
