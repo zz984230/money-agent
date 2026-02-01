@@ -1258,6 +1258,11 @@ def batch_save_screening_results(results: List) -> int:
 
     for result in results:
         try:
+            # current_factors 包含技术因子，不直接包含价格
+            # price_trend 是趋势指标(1=涨, -1=跌)，不是实际价格
+            # 使用 0.0 作为占位值，实际价格需要从数据源重新获取
+            current_price = 0.0
+
             entry = AnalysisHistoryEntry(
                 id=f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{result.symbol}",
                 symbol=result.symbol,
@@ -1265,7 +1270,7 @@ def batch_save_screening_results(results: List) -> int:
                 fund_type=result.fund_type,
                 created_at=datetime.now().isoformat(),
                 abnormal_events_count=result.abnormal_events_count,
-                current_price=result.current_factors.get('price_trend', 0),
+                current_price=current_price,
                 ai_summary=result.ai_summary,
                 current_factors=result.current_factors
             )

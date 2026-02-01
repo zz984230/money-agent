@@ -21,7 +21,8 @@ def test_batch_save_screening_results():
     mock_result.fund_type = "LOF"
     mock_result.abnormal_events_count = 3
     mock_result.ai_summary = "Test AI summary"
-    mock_result.current_factors = {"price_trend": 100.5}
+    # price_trend is a trend indicator (1=up, -1=down), NOT the actual price
+    mock_result.current_factors = {"price_trend": 1}
 
     results = [mock_result]
 
@@ -44,6 +45,8 @@ def test_batch_save_screening_results():
         entry = call_args[0][0]
         assert entry.symbol == "163415"
         assert entry.name == "白银LOF"
+        # Verify current_price is 0.0 (placeholder), NOT price_trend (1)
+        assert entry.current_price == 0.0
 
 
 def test_batch_save_with_partial_failure():
@@ -77,3 +80,35 @@ def test_batch_save_with_partial_failure():
 
         # Only first should succeed
         assert count == 1
+
+
+def test_batch_save_price_field_not_trend():
+    """Test that current_price uses placeholder value, not price_trend indicator"""
+    # Create a mock result with price_trend = -1 (down trend)
+    mock_result = Mock(spec=GambleAnalysisResult)
+    mock_result.symbol = "163415"
+    mock_result.name = "白银LOF"
+    mock_result.fund_type = "LOF"
+    mock_result.abnormal_events_count = 2
+    mock_result.ai_summary = "Test summary"
+    # price_trend is -1 (down), but this should NOT be used as current_price
+    mock_result.current_factors = {"price_trend": -1}
+
+    results = [mock_result]
+
+    with patch('ui.dashboard.get_history_manager') as mock_get_manager:
+        mock_manager = Mock(spec=AnalysisHistoryManager)
+        mock_manager.add_entry.return_value = True
+        mock_get_manager.return_value = mock_manager
+
+        from ui.dashboard import batch_save_screening_results
+
+        count = batch_save_screening_results(results)
+
+        assert count == 1
+        call_args = mock_manager.add_entry.call_args
+        entry = call_args[0][0]
+        # Verify current_price is 0.0 (placeholder), NOT price_trend (-1)
+        assert entry.current_price == 0.0
+        # Verify price_trend is still in current_factors
+        assert entry.current_factors.get("price_trend") == -1
