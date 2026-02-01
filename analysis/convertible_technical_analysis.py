@@ -13,6 +13,7 @@ import numpy as np
 from core.agent.base_agent import BaseAgent
 from core.agent.prompts import PromptBuilder
 from data.fetchers.akshare_fetcher import AKShareFetcher
+from analysis.technical_indicators import TechnicalIndicators
 
 
 logger = logging.getLogger(__name__)
@@ -53,10 +54,40 @@ class ConvertibleTechnicalData:
     bid_volume: List[float]      # 买量
     ask_volume: List[float]      # 卖量
 
-    # 技术指标
+    # 技术指标 - 均线
     ma5: float                   # 5日均线
+    ma10: float                  # 10日均线
     ma20: float                  # 20日均线
+
+    # 技术指标 - 动量
+    rsi_14: float                # RSI(14)
+    macd: float                  # MACD
+    macd_signal: float           # MACD信号线
+    macd_hist: float             # MACD柱状图
+    momentum_5: float            # 5日动量
+    momentum_10: float           # 10日动量
+
+    # 技术指标 - 波动率
     volatility_20d: float        # 20日波动率
+    atr_14: float                # ATR(14)
+
+    # 技术指标 - 布林带
+    bollinger_upper: float       # 布林带上轨
+    bollinger_middle: float      # 布林带中轨
+    bollinger_lower: float       # 布林带下轨
+    bollinger_bandwidth: float   # 布林带带宽
+    bollinger_position: float    # 布林带位置
+
+    # 技术指标 - KDJ
+    kdj_k: float                 # KDJ K值
+    kdj_d: float                 # KDJ D值
+    kdj_j: float                 # KDJ J值
+
+    # 技术指标 - 其他
+    cci: float                   # CCI指标
+    williams_r: float            # 威廉指标
+    obv: float                   # OBV能量潮
+    obv_ma: float                # OBV均线
 
 
 @dataclass
@@ -238,27 +269,61 @@ class ConvertibleBondTechnicalAnalyzer:
                 end_date=end_date.strftime('%Y%m%d')
             )
 
-            # 计算技术指标
+            # 计算技术指标（使用TechnicalIndicators工具类）
             ma5 = 0.0
+            ma10 = 0.0
             ma20 = 0.0
+            rsi_14 = 0.0
+            macd = 0.0
+            macd_signal = 0.0
+            macd_hist = 0.0
+            momentum_5 = 0.0
+            momentum_10 = 0.0
             volatility_20d = 0.0
+            atr_14 = 0.0
+            bollinger_upper = 0.0
+            bollinger_middle = 0.0
+            bollinger_lower = 0.0
+            bollinger_bandwidth = 0.0
+            bollinger_position = 0.0
+            kdj_k = 0.0
+            kdj_d = 0.0
+            kdj_j = 0.0
+            cci = 0.0
+            williams_r = 0.0
+            obv = 0.0
+            obv_ma = 0.0
 
             if history_df is not None and not history_df.empty and 'close' in history_df.columns:
-                closes = history_df['close'].values
+                # 使用TechnicalIndicators工具类计算所有技术指标
+                indicators = TechnicalIndicators.get_latest_indicators(history_df)
 
-                # 计算MA5和MA20
-                if len(closes) >= 5:
-                    ma5 = float(np.mean(closes[-5:]))
-                if len(closes) >= 20:
-                    ma20 = float(np.mean(closes[-20:]))
-
-                # 计算20日波动率
-                if len(closes) >= 20:
-                    returns = pd.Series(closes).pct_change().dropna()
-                    if len(returns) > 0:
-                        volatility_20d = float(returns.std() * np.sqrt(252) * 100)  # 年化波动率
+                ma5 = indicators.get('ma5', 0.0)
+                ma10 = indicators.get('ma10', 0.0)
+                ma20 = indicators.get('ma20', 0.0)
+                rsi_14 = indicators.get('rsi_14', 0.0)
+                macd = indicators.get('macd', 0.0)
+                macd_signal = indicators.get('macd_signal', 0.0)
+                macd_hist = indicators.get('macd_hist', 0.0)
+                momentum_5 = indicators.get('momentum_5', 0.0)
+                momentum_10 = indicators.get('momentum_10', 0.0)
+                volatility_20d = indicators.get('volatility_20d', 0.0)
+                atr_14 = indicators.get('atr_14', 0.0)
+                bollinger_upper = indicators.get('bollinger_upper', 0.0)
+                bollinger_middle = indicators.get('bollinger_middle', 0.0)
+                bollinger_lower = indicators.get('bollinger_lower', 0.0)
+                bollinger_bandwidth = indicators.get('bollinger_bandwidth', 0.0)
+                bollinger_position = indicators.get('bollinger_position', 0.0)
+                kdj_k = indicators.get('kdj_k', 0.0)
+                kdj_d = indicators.get('kdj_d', 0.0)
+                kdj_j = indicators.get('kdj_j', 0.0)
+                cci = indicators.get('cci', 0.0)
+                williams_r = indicators.get('williams_r', 0.0)
+                obv = indicators.get('obv', 0.0)
+                obv_ma = indicators.get('obv_ma', 0.0)
 
                 # 如果实时数据获取失败，从历史数据获取价格
+                closes = history_df['close'].values
                 if latest_price == 0 and len(closes) > 0:
                     latest_price = float(closes[-1])
 
@@ -291,9 +356,35 @@ class ConvertibleBondTechnicalAnalyzer:
                 ask_price=[],              # 暂不支持
                 bid_volume=[],             # 暂不支持
                 ask_volume=[],             # 暂不支持
+                # 均线
                 ma5=ma5,
+                ma10=ma10,
                 ma20=ma20,
-                volatility_20d=volatility_20d
+                # 动量
+                rsi_14=rsi_14,
+                macd=macd,
+                macd_signal=macd_signal,
+                macd_hist=macd_hist,
+                momentum_5=momentum_5,
+                momentum_10=momentum_10,
+                # 波动率
+                volatility_20d=volatility_20d,
+                atr_14=atr_14,
+                # 布林带
+                bollinger_upper=bollinger_upper,
+                bollinger_middle=bollinger_middle,
+                bollinger_lower=bollinger_lower,
+                bollinger_bandwidth=bollinger_bandwidth,
+                bollinger_position=bollinger_position,
+                # KDJ
+                kdj_k=kdj_k,
+                kdj_d=kdj_d,
+                kdj_j=kdj_j,
+                # 其他
+                cci=cci,
+                williams_r=williams_r,
+                obv=obv,
+                obv_ma=obv_ma
             )
 
             return technical_data
@@ -322,9 +413,35 @@ class ConvertibleBondTechnicalAnalyzer:
                 ask_price=[],
                 bid_volume=[],
                 ask_volume=[],
+                # 均线
                 ma5=0.0,
+                ma10=0.0,
                 ma20=0.0,
-                volatility_20d=0.0
+                # 动量
+                rsi_14=0.0,
+                macd=0.0,
+                macd_signal=0.0,
+                macd_hist=0.0,
+                momentum_5=0.0,
+                momentum_10=0.0,
+                # 波动率
+                volatility_20d=0.0,
+                atr_14=0.0,
+                # 布林带
+                bollinger_upper=0.0,
+                bollinger_middle=0.0,
+                bollinger_lower=0.0,
+                bollinger_bandwidth=0.0,
+                bollinger_position=0.0,
+                # KDJ
+                kdj_k=0.0,
+                kdj_d=0.0,
+                kdj_j=0.0,
+                # 其他
+                cci=0.0,
+                williams_r=0.0,
+                obv=0.0,
+                obv_ma=0.0
             )
 
     def _ai_only_analysis(self, technical_data: ConvertibleTechnicalData) -> Optional[str]:
@@ -491,13 +608,46 @@ class ConvertibleBondTechnicalAnalyzer:
         if data.amount > 0:
             lines.append(f"成交额: {data.amount:,.0f} 元")
 
-        # 技术指标
+        # 技术指标 - 均线
         if data.ma5 > 0:
             lines.append(f"5日均线: {data.ma5:.2f} 元")
+        if data.ma10 > 0:
+            lines.append(f"10日均线: {data.ma10:.2f} 元")
         if data.ma20 > 0:
             lines.append(f"20日均线: {data.ma20:.2f} 元")
+
+        # 技术指标 - 动量
+        if data.rsi_14 > 0:
+            lines.append(f"RSI(14): {data.rsi_14:.2f}")
+        if data.macd != 0:
+            lines.append(f"MACD: {data.macd:.4f}")
+        if data.macd_signal != 0:
+            lines.append(f"MACD信号: {data.macd_signal:.4f}")
+        if data.macd_hist != 0:
+            lines.append(f"MACD柱: {data.macd_hist:.4f}")
+        if data.kdj_k > 0:
+            lines.append(f"KDJ: K={data.kdj_k:.2f}, D={data.kdj_d:.2f}, J={data.kdj_j:.2f}")
+        if data.cci != 0:
+            lines.append(f"CCI: {data.cci:.2f}")
+        if data.williams_r != 0:
+            lines.append(f"威廉%R: {data.williams_r:.2f}")
+
+        # 技术指标 - 波动率
         if data.volatility_20d > 0:
             lines.append(f"20日波动率: {data.volatility_20d:.2f}%")
+        if data.atr_14 > 0:
+            lines.append(f"ATR(14): {data.atr_14:.4f}")
+
+        # 技术指标 - 布林带
+        if data.bollinger_upper > 0 and data.bollinger_lower > 0:
+            lines.append(f"布林带: 上={data.bollinger_upper:.2f}, 中={data.bollinger_middle:.2f}, 下={data.bollinger_lower:.2f}")
+            lines.append(f"布林带位置: {data.bollinger_position:.2f} (0-1)")
+
+        # 技术指标 - 其他
+        if data.obv != 0:
+            lines.append(f"OBV: {data.obv:,.0f}")
+            if data.obv_ma > 0:
+                lines.append(f"OBV均线: {data.obv_ma:,.0f}")
 
         # 转股相关
         if data.conversion_price > 0:

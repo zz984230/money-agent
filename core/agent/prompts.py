@@ -132,31 +132,100 @@ class PromptBuilder:
         Returns:
             Markdown格式的因子表格字符串
         """
-        if len(feature_importance) == 0:
-            return "无因子数据"
-
-        top_factors = feature_importance.head(top_n)
-
         table_lines = []
         table_lines.append("| 因子名称 | 当前值 | 信号 | 说明 |")
         table_lines.append("|---------|-------|------|------|")
 
-        for _, row in top_factors.iterrows():
-            factor_name = row['feature']
-            factor_value = current_factors.get(factor_name, 0)
+        # 如果有特征重要性数据，按重要性排序显示
+        if len(feature_importance) > 0:
+            top_factors = feature_importance.head(top_n)
+            for _, row in top_factors.iterrows():
+                factor_name = row['feature']
+                factor_value = current_factors.get(factor_name, 0)
 
-            # 获取信号
-            signal = self._get_signal(factor_name, factor_value)
-            signal_icon = {'bullish': '🟢看涨', 'bearish': '🔴看跌', 'neutral': '⚪中性'}.get(signal, '⚪中性')
+                # 获取信号
+                signal = self._get_signal(factor_name, factor_value)
+                signal_icon = {'bullish': '🟢看涨', 'bearish': '🔴看跌', 'neutral': '⚪中性'}.get(signal, '⚪中性')
 
-            # 格式化值
-            formatted_value = self._format_factor_value(factor_name, factor_value)
+                # 格式化值
+                formatted_value = self._format_factor_value(factor_name, factor_value)
 
-            # 获取解释
-            explanation_template = self.SIGNAL_EXPLANATIONS.get(factor_name, '')
-            explanation = explanation_template.format(**self.SIGNAL_THRESHOLDS.get(factor_name, {}))
+                # 获取解释
+                explanation_template = self.SIGNAL_EXPLANATIONS.get(factor_name, '')
+                explanation = explanation_template.format(**self.SIGNAL_THRESHOLDS.get(factor_name, {}))
 
-            table_lines.append(f"| {factor_name} | {formatted_value} | {signal_icon} | {explanation} |")
+                table_lines.append(f"| {factor_name} | {formatted_value} | {signal_icon} | {explanation} |")
+        else:
+            # 如果没有特征重要性数据，显示所有可用的因子（按因子类别分组）
+            # 技术指标优先，然后是情绪、资金流等
+            factor_priority = [
+                # 技术指标 - 趋势
+                'ma5', 'ma10', 'ma20', 'ema12', 'ema26',
+                # 技术指标 - 动量
+                'rsi_14', 'macd', 'macd_signal', 'macd_hist',
+                'momentum_5', 'momentum_10', 'momentum_20',
+                # 技术指标 - 波动率
+                'bollinger_bandwidth', 'bollinger_position',
+                'atr_14', 'volatility_20',
+                # 技术指标 - 其他
+                'kdj_k', 'kdj_d', 'kdj_j', 'cci', 'williams_r',
+                # 成交量
+                'volume_ratio', 'volume_ma_5',
+                # 情绪指标
+                'market_breadth_ratio', 'market_sentiment_score',
+                'limit_up_ratio', 'limit_down_ratio',
+                # 资金流
+                'main_force_net_inflow_ratio', 'large_order_momentum',
+                'capital_accumulation', 'northbound_flow',
+                # ETF/LOF特有
+                'premium_discount_rate', 'arbitrage_space', 'liquidity_rank'
+            ]
+
+            # 按优先级显示因子
+            count = 0
+            for factor_name in factor_priority:
+                if factor_name in current_factors and count < top_n:
+                    factor_value = current_factors.get(factor_name, 0)
+                    # 跳过NaN值
+                    if pd.isna(factor_value):
+                        continue
+
+                    # 获取信号
+                    signal = self._get_signal(factor_name, factor_value)
+                    signal_icon = {'bullish': '🟢看涨', 'bearish': '🔴看跌', 'neutral': '⚪中性'}.get(signal, '⚪中性')
+
+                    # 格式化值
+                    formatted_value = self._format_factor_value(factor_name, factor_value)
+
+                    # 获取解释
+                    explanation_template = self.SIGNAL_EXPLANATIONS.get(factor_name, '')
+                    explanation = explanation_template.format(**self.SIGNAL_THRESHOLDS.get(factor_name, {}))
+
+                    table_lines.append(f"| {factor_name} | {formatted_value} | {signal_icon} | {explanation} |")
+                    count += 1
+
+            # 如果优先级因子不够，补充其他因子
+            if count < top_n and count < len(current_factors):
+                for factor_name in current_factors.keys():
+                    if factor_name not in factor_priority and count < top_n:
+                        factor_value = current_factors.get(factor_name, 0)
+                        # 跳过NaN值
+                        if pd.isna(factor_value):
+                            continue
+
+                        # 获取信号
+                        signal = self._get_signal(factor_name, factor_value)
+                        signal_icon = {'bullish': '🟢看涨', 'bearish': '🔴看跌', 'neutral': '⚪中性'}.get(signal, '⚪中性')
+
+                        # 格式化值
+                        formatted_value = self._format_factor_value(factor_name, factor_value)
+
+                        # 获取解释
+                        explanation_template = self.SIGNAL_EXPLANATIONS.get(factor_name, '')
+                        explanation = explanation_template.format(**self.SIGNAL_THRESHOLDS.get(factor_name, {}))
+
+                        table_lines.append(f"| {factor_name} | {formatted_value} | {signal_icon} | {explanation} |")
+                        count += 1
 
         return "\n".join(table_lines)
 
@@ -403,17 +472,50 @@ ETF名称：{etf_name}
 强赎触发价：{technical_data.call_trigger_price}元
 回售触发价：{technical_data.put_trigger_price}元
 
-【技术指标】
+【技术指标 - 均线】
 5日均线：{technical_data.ma5}元
+10日均线：{technical_data.ma10}元
 20日均线：{technical_data.ma20}元
+
+【技术指标 - 动量】
+RSI(14)：{technical_data.rsi_14}
+MACD：{technical_data.macd}
+MACD信号线：{technical_data.macd_signal}
+MACD柱状图：{technical_data.macd_hist}
+5日动量：{technical_data.momentum_5}
+10日动量：{technical_data.momentum_10}
+
+【技术指标 - 波动率】
 20日波动率：{technical_data.volatility_20d}%
+ATR(14)：{technical_data.atr_14}
+
+【技术指标 - 布林带】
+上轨：{technical_data.bollinger_upper}元
+中轨：{technical_data.bollinger_middle}元
+下轨：{technical_data.bollinger_lower}元
+带宽：{technical_data.bollinger_bandwidth}
+位置：{technical_data.bollinger_position}（0-1，0.5为中轨）
+
+【技术指标 - KDJ】
+K值：{technical_data.kdj_k}
+D值：{technical_data.kdj_d}
+J值：{technical_data.kdj_j}
+
+【技术指标 - 其他】
+CCI：{technical_data.cci}
+威廉指标：{technical_data.williams_r}
+OBV：{technical_data.obv}
+OBV均线：{technical_data.obv_ma}
 
 请从以下几个维度进行分析：
 
 1. **定位判断**：判断该转债属于偏股型、平衡型还是偏债型，并说明理由
-2. **动能分析**：分析价格趋势、成交量变化、波动率情况
-3. **条款博弈**：分析强赎、回售、下修条款的触发距离和博弈空间
-4. **投资建议**：综合以上分析，给出买入/持有/卖出建议及核心逻辑
+2. **趋势分析**：基于均线、MACD、RSI等指标分析价格趋势和动能
+3. **波动分析**：基于布林带、ATR、波动率等指标分析价格波动特征
+4. **超买超卖判断**：基于RSI、KDJ、威廉指标等判断是否处于超买超卖状态
+5. **量价分析**：基于OBV等指标分析量价配合情况
+6. **条款博弈**：分析强赎、回售、下修条款的触发距离和博弈空间
+7. **投资建议**：综合以上分析，给出买入/持有/卖出建议及核心逻辑
 
 请用简洁专业的语言进行分析，重点关注投资价值和风险点。"""
 
@@ -580,14 +682,21 @@ ETF名称：{etf_name}
         # 构建增强的因子表格
         factor_table = self._build_factor_table(current_factors, feature_importance, top_n=12)
 
-        # 统计信号数量
+        # 统计信号数量（从current_factors中统计）
         bullish_signals = 0
         bearish_signals = 0
         neutral_signals = 0
 
+        # 确定要统计哪些因子
         if len(feature_importance) > 0:
-            for _, row in feature_importance.head(10).iterrows():
-                factor_name = row['feature']
+            # 有特征重要性时，只统计Top 10因子
+            factors_to_count = feature_importance.head(10)['feature'].tolist()
+        else:
+            # 没有特征重要性时，统计所有可用因子
+            factors_to_count = list(current_factors.keys())
+
+        for factor_name in factors_to_count:
+            if factor_name in current_factors:
                 factor_value = current_factors.get(factor_name, 0)
                 signal = self._get_signal(factor_name, factor_value)
                 if signal == 'bullish':
@@ -621,6 +730,8 @@ ETF名称：{etf_name}
 
 ## 🎯 当前关键因子分析（Top 10-12）
 {factor_table}
+
+**注**: {'因子按历史重要性排序' if len(feature_importance) > 0 else '因子按优先级排序（技术指标>情绪>资金流>ETF/LOF特有），无历史重要性数据'}
 
 **信号汇总**:
 - 🟢 看涨信号: {bullish_signals}个
