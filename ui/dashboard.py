@@ -888,7 +888,7 @@ def render_etf_lof_gamble_page(gamble_analyzer):
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["异常波动筛选", "AI深度分析", "因子分析汇总"])
+    tab1, tab2, tab3, tab4 = st.tabs(["异常波动筛选", "AI深度分析", "因子分析汇总", "筛选历史记录"])
 
     with tab1:
         render_abnormal_screening_page(gamble_analyzer)
@@ -898,6 +898,9 @@ def render_etf_lof_gamble_page(gamble_analyzer):
 
     with tab3:
         render_factor_summary_page(gamble_analyzer)
+
+    with tab4:
+        render_screening_history_page(gamble_analyzer)
 
 
 def render_abnormal_screening_page(gamble_analyzer):
@@ -1558,6 +1561,101 @@ def render_factor_summary_page(gamble_analyzer):
 
             except Exception as e:
                 st.error(f"分析失败: {str(e)}")
+
+
+def render_screening_history_page(gamble_analyzer):
+    """渲染筛选历史记录页面"""
+    st.subheader("筛选历史记录")
+
+    manager = get_history_manager()
+
+    # 搜索和过滤控件
+    st.markdown("### 🔍 搜索和过滤")
+    col1, col2, col3 = st.columns([3, 2, 2])
+
+    with col1:
+        search_keyword = st.text_input(
+            "搜索",
+            placeholder="输入代码或名称",
+            key="screening_history_search"
+        )
+
+    with col2:
+        filter_type = st.selectbox(
+            "类型",
+            options=["全部", "LOF", "ETF"],
+            key="screening_history_filter_type"
+        )
+
+    with col3:
+        st.write("")
+        refresh_btn = st.button("刷新", key="screening_history_refresh")
+
+    # 获取历史记录
+    fund_type_filter = None if filter_type == "全部" else filter_type
+    entries = manager.search(keyword=search_keyword, fund_type=fund_type_filter)
+
+    if not entries:
+        st.info("暂无历史记录，请先进行筛选并保存报告")
+        return
+
+    # 显示历史记录列表
+    st.markdown("---")
+    st.markdown("### 📋 历史记录列表")
+
+    for entry in entries:
+        with st.container():
+            col1, col2, col3, col4, col5 = st.columns([2, 3, 4, 2, 2])
+
+            with col1:
+                st.markdown(f"**{entry.symbol}**")
+
+            with col2:
+                st.markdown(f"{entry.name}")
+
+            with col3:
+                st.caption(entry.created_at.replace('T', ' '))
+
+            with col4:
+                view_btn = st.button("查看", key=f"screening_view_{entry.id}")
+
+            with col5:
+                delete_btn = st.button("删除", key=f"screening_delete_{entry.id}")
+
+            # 查看详情
+            if view_btn:
+                st.markdown("---")
+                result = history_entry_to_result(entry)
+                display_ai_analysis_result(result)
+                st.markdown("---")
+
+            # 删除
+            if delete_btn:
+                if manager.delete_entry(entry.id):
+                    st.success(f"已删除 {entry.symbol} 的报告")
+                    st.rerun()
+                else:
+                    st.error("删除失败")
+
+    # 底部操作按钮
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("清空全部", key="screening_history_clear_all"):
+            if manager.clear_all():
+                st.success("已清空全部历史记录")
+                st.rerun()
+            else:
+                st.error("清空失败")
+
+    with col2:
+        if st.button("导出CSV", key="screening_history_export"):
+            csv_path = manager.export_to_csv()
+            if csv_path:
+                st.success(f"已导出到: {csv_path}")
+            else:
+                st.error("导出失败")
 
 
 import hashlib
