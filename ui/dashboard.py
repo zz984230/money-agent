@@ -1239,6 +1239,44 @@ def display_screening_results(results):
             display_ai_analysis_result(selected_result)
 
 
+def batch_save_screening_results(results: List) -> int:
+    """
+    批量保存筛选结果到历史记录
+
+    Args:
+        results: GambleAnalysisResult 对象列表
+
+    Returns:
+        成功保存的数量
+    """
+    from datetime import datetime
+    import logging
+
+    logger = logging.getLogger(__name__)
+    manager = get_history_manager()
+    saved_count = 0
+
+    for result in results:
+        try:
+            entry = AnalysisHistoryEntry(
+                id=f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{result.symbol}",
+                symbol=result.symbol,
+                name=result.name,
+                fund_type=result.fund_type,
+                created_at=datetime.now().isoformat(),
+                abnormal_events_count=result.abnormal_events_count,
+                current_price=result.current_factors.get('price_trend', 0),
+                ai_summary=result.ai_summary,
+                current_factors=result.current_factors
+            )
+            if manager.add_entry(entry):
+                saved_count += 1
+        except Exception as e:
+            logger.error(f"保存 {result.symbol} 失败: {e}")
+
+    return saved_count
+
+
 def render_ai_analysis_page(gamble_analyzer):
     """渲染AI深度分析页面"""
     st.subheader("AI深度分析")
