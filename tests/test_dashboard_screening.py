@@ -112,3 +112,35 @@ def test_batch_save_price_field_not_trend():
         assert entry.current_price == 0.0
         # Verify price_trend is still in current_factors
         assert entry.current_factors.get("price_trend") == -1
+
+
+def test_history_entry_to_result():
+    """Test converting history entry to GambleAnalysisResult"""
+    from storage.analysis_history import AnalysisHistoryEntry
+    from analysis.etf_lof_gamble import GambleAnalysisResult
+    from datetime import datetime
+
+    entry = AnalysisHistoryEntry(
+        id="20250201120000_163415",
+        symbol="163415",
+        name="白银LOF",
+        fund_type="LOF",
+        created_at="2025-02-01T12:00:00",
+        abnormal_events_count=3,
+        current_price=0.0,
+        ai_summary="Test AI summary",
+        current_factors={"price_trend": 1}
+    )
+
+    from ui.dashboard import history_entry_to_result
+
+    result = history_entry_to_result(entry)
+
+    assert result.symbol == "163415"
+    assert result.name == "白银LOF"
+    assert result.fund_type == "LOF"
+    assert result.abnormal_events_count == 3
+    assert result.ai_summary == "Test AI summary"
+    # These should be empty/None for history entries
+    assert result.abnormal_events == []
+    assert result.feature_importance is None

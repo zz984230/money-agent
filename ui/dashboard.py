@@ -1294,6 +1294,30 @@ def batch_save_screening_results(results: List) -> int:
     return saved_count
 
 
+def history_entry_to_result(entry):
+    """
+    将历史记录条目转换为 GambleAnalysisResult 以便复用显示函数
+
+    Args:
+        entry: AnalysisHistoryEntry 对象
+
+    Returns:
+        GambleAnalysisResult 对象
+    """
+    from analysis.etf_lof_gamble import GambleAnalysisResult
+
+    return GambleAnalysisResult(
+        symbol=entry.symbol,
+        name=entry.name,
+        fund_type=entry.fund_type,
+        abnormal_events_count=entry.abnormal_events_count,
+        abnormal_events=[],  # 历史记录中不包含
+        current_factors=entry.current_factors,
+        feature_importance=None,  # 历史记录中不包含
+        ai_summary=entry.ai_summary
+    )
+
+
 def render_ai_analysis_page(gamble_analyzer):
     """渲染AI深度分析页面"""
     st.subheader("AI深度分析")
