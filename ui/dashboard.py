@@ -1196,7 +1196,6 @@ def display_screening_results(results):
         # 获取最近异常事件
         recent_event = r.abnormal_events[-1] if r.abnormal_events else None
         recent_change = recent_event['return_pct'] * 100 if recent_event else 0
-        current_price = r.current_factors.get('price_trend', 0)  # 简化处理
 
         result_data.append({
             "代码": r.symbol,
