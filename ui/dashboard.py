@@ -1220,8 +1220,21 @@ def display_screening_results(results):
         hide_index=True
     )
 
-    # 选择查看详情
+    # 批量保存按钮
     st.markdown("---")
+    col1, col2, col3 = st.columns([2, 2, 2])
+    with col2:
+        if st.button("💾 批量保存全部报告", key="batch_save_screening_results"):
+            with st.spinner("正在保存报告..."):
+                saved_count = batch_save_screening_results(results)
+                if saved_count > 0:
+                    st.success(f"✅ 已保存 {saved_count} 份报告到历史记录")
+                else:
+                    st.warning("⚠️ 保存失败，请查看日志")
+
+    st.markdown("---")
+
+    # 选择查看详情
     st.subheader("查看AI分析详情")
 
     selected_code = st.selectbox(
