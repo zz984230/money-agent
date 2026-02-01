@@ -793,7 +793,7 @@ class LOFETFGambleAnalyzer:
         try:
             from core.agent.prompts import PromptBuilder
 
-            prompt = PromptBuilder.build_etf_lof_gamble_prompt(
+            prompt = PromptBuilder().build_etf_lof_gamble_prompt(
                 symbol, name, fund_type, abnormal_info,
                 current_factors, feature_importance, current_data
             )

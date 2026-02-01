@@ -904,6 +904,20 @@ def render_abnormal_screening_page(gamble_analyzer):
     """渲染异常波动筛选页面"""
     st.subheader("异常波动筛选")
 
+    # 如果有之前保存的筛选结果，显示它们
+    if "screening_results" in st.session_state and st.session_state.screening_results:
+        st.markdown("---")
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.info("💾 显示上次的筛选结果")
+        with col2:
+            if st.button("清除结果", key="clear_screening_results"):
+                st.session_state.screening_results = None
+                st.rerun()
+        if st.session_state.screening_results:
+            display_screening_results(st.session_state.screening_results)
+        st.markdown("---")
+
     # 筛选模式选择（放在form外面，以便动态显示缓存信息）
     scan_mode = st.radio(
         "筛选模式",
@@ -1015,7 +1029,8 @@ def render_abnormal_screening_page(gamble_analyzer):
                         "时间窗口",
                         options=[2, 3, 5],
                         format_func=lambda x: f"{x}天",
-                        index=1  # 默认3天
+                        index=1,  # 默认3天
+                        key="abnormal_screening_window"
                     )
 
             with col2:
@@ -1054,6 +1069,9 @@ def render_abnormal_screening_page(gamble_analyzer):
         if not fund_types:
             st.error("请至少选择一种标的类型！")
             return
+
+        # 清除之前的筛选结果
+        st.session_state.screening_results = None
 
         # 转换fund_types
         fund_type_map = {
@@ -1138,6 +1156,8 @@ def render_abnormal_screening_page(gamble_analyzer):
                     state="complete",
                     expanded=False
                 )
+                # 保存结果到 session_state，以便在页面重新渲染时恢复
+                st.session_state.screening_results = results
                 # 显示结果列表
                 display_screening_results(results)
             else:
@@ -1208,7 +1228,8 @@ def display_screening_results(results):
     selected_code = st.selectbox(
         "选择标的查看详情",
         options=[r.symbol for r in results],
-        format_func=lambda x: next((r.name for r in results if r.symbol == x), x)
+        format_func=lambda x: next((r.name for r in results if r.symbol == x), x),
+        key="screening_result_selector"
     )
 
     if selected_code:
@@ -1236,7 +1257,8 @@ def render_ai_analysis_page(gamble_analyzer):
             "时间窗口",
             options=[2, 3, 5],
             index=1,
-            help="检测异常波动的天数窗口"
+            help="检测异常波动的天数窗口",
+            key="ai_analysis_window"
         )
 
     with col3:
@@ -1373,7 +1395,7 @@ def render_factor_summary_page(gamble_analyzer):
         col1, col2 = st.columns(2)
 
         with col1:
-            summary_window = st.selectbox("时间窗口", [2, 3, 5], index=1)
+            summary_window = st.selectbox("时间窗口", [2, 3, 5], index=1, key="factor_summary_window")
 
         with col2:
             summary_threshold = st.slider("波动阈值 (%)", 3, 30, 8)
