@@ -888,18 +888,12 @@ def render_etf_lof_gamble_page(gamble_analyzer):
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4 = st.tabs(["异常波动筛选", "AI深度分析", "因子分析汇总", "筛选历史记录"])
+    tab1, tab2 = st.tabs(["异常波动筛选", "筛选历史记录"])
 
     with tab1:
         render_abnormal_screening_page(gamble_analyzer)
 
     with tab2:
-        render_ai_analysis_page(gamble_analyzer)
-
-    with tab3:
-        render_factor_summary_page(gamble_analyzer)
-
-    with tab4:
         render_screening_history_page(gamble_analyzer)
 
 
@@ -1321,104 +1315,6 @@ def history_entry_to_result(entry):
     )
 
 
-def render_ai_analysis_page(gamble_analyzer):
-    """渲染AI深度分析页面"""
-    st.subheader("AI深度分析")
-
-    col1, col2, col3 = st.columns([2, 1, 1])
-
-    with col1:
-        analysis_code = st.text_input(
-            "基金代码",
-            placeholder="如 163415",
-            help="输入6位基金代码"
-        )
-
-    with col2:
-        analysis_window = st.selectbox(
-            "时间窗口",
-            options=[2, 3, 5],
-            index=1,
-            help="检测异常波动的天数窗口",
-            key="ai_analysis_window"
-        )
-
-    with col3:
-        analysis_threshold = st.slider(
-            "波动阈值 (%)",
-            min_value=3,
-            max_value=30,
-            value=8,
-            help="累计涨跌幅超过此百分比视为异常"
-        )
-
-    analyze_btn = st.button("开始分析", type="primary")
-
-    if analyze_btn and analysis_code:
-        with st.spinner("正在分析，请稍候..."):
-            try:
-                result = cached_analyze_single(
-                    gamble_analyzer,
-                    analysis_code,
-                    f"基金{analysis_code}",  # 简化名称
-                    "LOF",  # 默认类型
-                    window=analysis_window,
-                    threshold=analysis_threshold / 100
-                )
-
-                if result:
-                    # 保存到历史记录
-                    try:
-                        save_analysis_to_history(result)
-                    except Exception as save_error:
-                        st.warning(f"保存历史记录失败: {str(save_error)}")
-
-                    display_ai_analysis_result(result)
-                else:
-                    st.warning("""
-                    **分析未完成**
-
-                    可能原因：
-                    1. 数据不足（需要至少100天历史数据）
-                    2. 未发现异常波动事件
-                    3. 无法获取数据
-
-                    请尝试其他代码或调整筛选条件。
-                    """)
-
-            except Exception as e:
-                st.error(f"分析失败: {str(e)}")
-
-    # 渲染历史记录区域
-    render_history_section()
-
-    # 使用说明
-    with st.expander("💡 使用说明"):
-        st.markdown("""
-        ### 常见LOF/ETF代码参考
-
-        **大宗商品LOF：**
-        - 163415: 白银LOF
-        - 161116: 黄金基金
-        - 162411: 华宝油气
-        - 160716: 有色金属
-
-        **海外ETF：**
-        - 513100: 纳斯达克100
-        - 513500: 标普500
-        - 513660: 恒生ETF
-
-        ### 分析内容
-
-        AI将为您分析：
-        1. **因子解读** - 当前关键因子说明了什么
-        2. **历史规律** - 该标的异常波动的特点
-        3. **时机判断** - 是否适合买入
-        4. **操作建议** - 买入点位、止盈止损
-        5. **风险提示** - 主要风险点
-        """)
-
-
 def display_ai_analysis_result(result):
     """显示AI分析结果"""
     # 基础信息卡片
@@ -1461,106 +1357,6 @@ def display_ai_analysis_result(result):
                 use_container_width=True,
                 hide_index=True
             )
-
-
-def render_factor_summary_page(gamble_analyzer):
-    """渲染因子分析汇总页面"""
-    st.subheader("因子分析汇总")
-
-    st.markdown("""
-    <div class="info-box">
-        对多个标的进行批量分析后，查看跨标的因子重要性排名。
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.form("factor_summary_form"):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            summary_window = st.selectbox("时间窗口", [2, 3, 5], index=1, key="factor_summary_window")
-
-        with col2:
-            summary_threshold = st.slider("波动阈值 (%)", 3, 30, 8)
-            summary_fund_types = st.multiselect(
-                "标的",
-                ["大宗商品LOF", "海外ETF"],
-                default=["大宗商品LOF", "海外ETF"]
-            )
-
-        summary_top_n = st.slider("分析数量", 10, 50, 20)
-
-        submitted = st.form_submit_button("开始分析", use_container_width=True)
-
-    if submitted:
-        if not summary_fund_types:
-            st.error("请选择标的类型")
-            return
-
-        with st.spinner("正在分析多个标的，请稍候..."):
-            try:
-                fund_type_map = {"大宗商品LOF": "commodity", "海外ETF": "overseas"}
-                criteria_types = [fund_type_map[t] for t in summary_fund_types]
-
-                criteria = {
-                    'window': summary_window,
-                    'threshold': summary_threshold / 100,
-                    'fund_types': criteria_types
-                }
-
-                results = gamble_analyzer.screen_and_analyze(criteria, summary_top_n)
-
-                if results:
-                    st.success(f"分析完成！共分析 {len(results)} 个标的")
-
-                    # 获取因子排名
-                    factor_ranking = gamble_analyzer.get_top_factors_across_funds(results)
-
-                    if len(factor_ranking) > 0:
-                        st.markdown("### 跨标的因子重要性排名")
-
-                        st.dataframe(
-                            factor_ranking,
-                            column_config={
-                                "feature": st.column_config.TextColumn("因子", width="medium"),
-                                "mean_importance": st.column_config.NumberColumn("平均重要性", format="%.3f"),
-                                "occurrence_count": st.column_config.NumberColumn("出现次数")
-                            },
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                        # 因子说明
-                        st.markdown("---")
-                        st.markdown("### 因子说明")
-
-                        factor_descriptions = {
-                            'momentum_5': '5日价格动量 - 反映短期价格趋势',
-                            'momentum_10': '10日价格动量 - 反映中期价格趋势',
-                            'momentum_20': '20日价格动量 - 反映长期价格趋势',
-                            'volatility_20': '20日波动率 - 反映价格波动程度',
-                            'atr_14': 'ATR(14) - 平均真实波幅',
-                            'volume_ratio': '量比 - 当前成交量/20日平均成交量',
-                            'volume_ma_5': '5日/20日成交量比',
-                            'rsi_14': 'RSI(14) - 相对强弱指标',
-                            'macd': 'MACD - 指数平滑异同移动平均线',
-                            'bollinger_bandwidth': '布林带带宽 - 反映价格波动范围',
-                            'pv_divergence': '价量背离 - 价格与成交量变化差异',
-                            'spread_pct': '买卖价差百分比',
-                            'liquidity_impact': '流动性冲击',
-                            'price_trend': '价格趋势方向',
-                            'vol_clustering': '波动聚集性'
-                        }
-
-                        for _, row in factor_ranking.head(10).iterrows():
-                            factor = row['feature']
-                            desc = factor_descriptions.get(factor, '暂无说明')
-                            st.markdown(f"**{factor}**: {desc}")
-
-                else:
-                    st.warning("未找到符合条件的标的")
-
-            except Exception as e:
-                st.error(f"分析失败: {str(e)}")
 
 
 def render_screening_history_page(gamble_analyzer):
@@ -2116,25 +1912,6 @@ def cached_screen_and_analyze(_analyzer, criteria, top_n):
     return result
 
 
-def cached_analyze_single(_analyzer, symbol, name, fund_type, window=3, threshold=0.08):
-    """
-    单个分析（不缓存时序数据和AI分析结果）
-
-    注意：不再缓存分析结果，因为时序数据每天变化
-
-    Args:
-        _analyzer: LOFETFGambleAnalyzer实例
-        symbol: 基金代码
-        name: 基金名称
-        fund_type: 基金类型
-        window: 时间窗口（天），默认3天
-        threshold: 波动阈值，默认8%（0.08）
-    """
-    # 直接调用分析器，传递阈值参数
-    result = _analyzer.analyze_single(symbol, name, fund_type, window=window, threshold=threshold)
-    return result
-
-
 def get_history_manager():
     """获取历史记录管理器实例（缓存）"""
     cache_dir = Path(__file__).parent.parent / ".cache" / "streamlit"
@@ -2144,96 +1921,6 @@ def get_history_manager():
         st.session_state.history_manager = AnalysisHistoryManager(cache_dir)
 
     return st.session_state.history_manager
-
-
-def save_analysis_to_history(result):
-    """保存分析结果到历史"""
-    import time
-
-    manager = get_history_manager()
-
-    # 尝试从 current_factors 中获取价格信息，如果没有则使用默认值
-    # current_factors 包含技术因子，不直接包含价格
-    # 使用 0.0 作为占位值，实际价格需要从数据源重新获取
-    current_price = 0.0
-
-    entry = AnalysisHistoryEntry(
-        id=f"{int(time.time()*1000)}-{result.symbol}",
-        symbol=result.symbol,
-        name=result.name,
-        fund_type=result.fund_type,
-        created_at=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-        abnormal_events_count=result.abnormal_events_count,
-        current_price=current_price,
-        ai_summary=result.ai_summary,
-        current_factors=result.current_factors
-    )
-
-    manager.add_entry(entry)
-
-
-def render_history_section():
-    """渲染历史记录区域"""
-    manager = get_history_manager()
-
-    st.markdown("---")
-
-    with st.expander("📜 分析历史记录", expanded=False):
-        # 搜索和过滤控件
-        col1, col2, col3 = st.columns([3, 2, 2])
-        with col1:
-            search_keyword = st.text_input("搜索", placeholder="输入代码或名称", key="history_search")
-        with col2:
-            filter_type = st.selectbox("类型", options=["全部", "LOF", "ETF"], key="history_filter_type")
-        with col3:
-            st.write("")
-            refresh_btn = st.button("刷新", key="history_refresh")
-
-        # 获取历史记录
-        fund_type_filter = None if filter_type == "全部" else filter_type
-        entries = manager.search(keyword=search_keyword, fund_type=fund_type_filter)
-
-        if not entries:
-            st.info("暂无历史记录")
-        else:
-            # 显示历史记录列表
-            for entry in entries:
-                col1, col2, col3, col4 = st.columns([2, 3, 3, 2])
-                with col1:
-                    st.markdown(f"**{entry.symbol}**")
-                with col2:
-                    st.markdown(f"{entry.name}")
-                with col3:
-                    st.caption(entry.created_at.replace('T', ' '))
-                with col4:
-                    view_btn = st.button("查看", key=f"view_{entry.id}")
-                    delete_btn = st.button("删除", key=f"delete_{entry.id}")
-
-                    if view_btn:
-                        st.markdown(f"""<div class="success-box"><h4>{entry.name} ({entry.symbol})</h4><p>类型: {entry.fund_type} | 异常事件: {entry.abnormal_events_count}次</p></div>""", unsafe_allow_html=True)
-                        st.markdown(entry.ai_summary)
-                    if delete_btn:
-                        if manager.delete_entry(entry.id):
-                            st.rerun()
-                        else:
-                            st.error("删除失败")
-
-            # 底部操作按钮
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("清空全部", key="history_clear_all"):
-                    if manager.clear_all():
-                        st.rerun()
-                    else:
-                        st.error("清空失败")
-            with col2:
-                if st.button("导出CSV", key="history_export"):
-                    csv_path = manager.export_to_csv()
-                    if csv_path:
-                        st.success(f"已导出到: {csv_path}")
-                    else:
-                        st.error("导出失败")
 
 
 def main():
